@@ -272,7 +272,30 @@ const SI=k=>STAGES.findIndex(s=>s.k===k);
 const SL=k=>(STAGES.find(s=>s.k===k)||{}).nm||k;
 const STATES={notStarted:['Not started','s-none'],inProgress:['In progress','s-prog'],
   waiting:['Waiting for approval','s-wait'],approved:['Approved','s-ok'],
-  rejected:['Rejected','s-bad'],completed:['Completed','s-ok']};
+  rejected:['Rejected','s-bad'],completed:['Completed','s-ok'],blocked:['Blocked','s-bad']};
+
+/* ═══ release milestones (Phase 3) ══════
+   A separate checklist per release, independent of the Grooming→Production
+   gate workflow above — this is the Excel-derived tracking list, not a
+   replacement for the existing approval gates. */
+const MILESTONES=[
+ {key:'idr',   name:'Internal Design Review'},
+ {key:'bms',   name:"BMS French Translation (Q'Bill 96)"},
+ {key:'sdd',   name:'SDD Review with Finance Controllers'},
+ {key:'demo',  name:'Dev Completion Demo'},
+ {key:'uatd',  name:'UAT Deployment + PO Verification'},
+ {key:'uats',  name:'UAT Start Date',   critical:true},
+ {key:'notes', name:'Release Notes'},
+ {key:'uate',  name:'UAT End Date',     critical:true},
+ {key:'buat',  name:'Business UAT Approval',       approval:true},
+ {key:'fuat',  name:'Finance UAT Approval',         approval:true},
+ {key:'kt',    name:'KT to Production Support Team'},
+ {key:'cssna', name:'CSSNA Final Finance Approval', approval:true},
+ {key:'prod',  name:'Production Release Date'}
+];
+const MS=key=>MILESTONES.find(m=>m.key===key)||{name:key};
+const blankMilestones=()=>MILESTONES.map(m=>({key:m.key,owner:null,ideal:null,actual:null,
+  status:'notStarted',comments:'',approved:false,approvedBy:null,approvedOn:null}));
 
 /* ═══ data (loaded from the server — see boot() below) ═══ */
 let uid=200; const nid=p=>p+(++uid);
@@ -310,6 +333,7 @@ async function checkEmailStatus(){
     if(r.ok){const j=await r.json();emailConfigured=j.configured;emailFrom=j.from}}
   catch(e){}
 }
+const RELEASE_TEXT_FIELDS=['workstream','jira','po','scrum','bizOwner','financeUat'];
 function applyState(s){
   users=s.users;comps=s.comps;groups=s.groups;rels=s.rels;apps_=s.apps_;
   notifs=s.notifs;acts=s.acts;audit=s.audit;tmpl=s.tmpl;uid=Math.max(uid,s.uid||0);
@@ -317,6 +341,13 @@ function applyState(s){
     const fb=users.find(u=>u.role==='Admin'&&u.active)||users.find(u=>u.active)||users[0];
     if(fb)me=fb.id;
   }
+  // Backfill Phase 3 fields onto releases saved before they existed — no
+  // backend migration needed, and existing release data is never dropped.
+  rels.forEach(r=>{
+    RELEASE_TEXT_FIELDS.forEach(f=>{if(r[f]===undefined)r[f]=''});
+    if(!Array.isArray(r.milestones))r.milestones=blankMilestones();
+    else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
+  });
 }
 function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl}}
 async function persist(){
@@ -967,6 +998,18 @@ function vRel(){
     </div>
 
     <div>
+      <div class="c sec"><div class="h"><h3>Basic information</h3>
+        <div class="r">${canEdit()?`<button class="bt s" onclick="mEditBasics('${r.id}')">Edit</button>`:''}</div></div><div class="b">
+        <div class="kv">
+          <div class="k">Workstream</div><div>${r.workstream?E(r.workstream):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">Jira #</div><div class="mono" style="font-size:12.5px">${r.jira?E(r.jira):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">PO</div><div>${r.po?E(r.po):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">Scrum Master</div><div>${r.scrum?E(r.scrum):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">Business Owner</div><div>${r.bizOwner?E(r.bizOwner):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">Finance UAT Tester</div><div>${r.financeUat?E(r.financeUat):'<span style="color:var(--mut2)">—</span>'}</div>
+        </div>
+      </div></div>
+
       <div class="c sec"><div class="h"><h3>Release information</h3></div><div class="b">
         <div class="kv">
           <div class="k">Reference</div><div class="mono" style="font-size:12.5px">${r.ref}</div>
@@ -997,7 +1040,23 @@ function vRel(){
           ||'<p style="color:var(--mut);font-size:13.5px">No events recorded.</p>'}</div>
       </div></div>
     </div>
-  </div>`;
+  </div>
+
+  <div class="c sec"><div class="h"><h3>Release milestones</h3>
+    <div class="r"><span class="tag">${r.milestones.filter(m=>m.status==='completed').length}/${MILESTONES.length} complete</span></div></div>
+    <div class="b flush"><div class="tw"><table>
+    <thead><tr><th>Milestone</th><th>Owner</th><th>Ideal date</th><th>Actual date</th><th>Status</th><th>Approval</th><th>Comments</th><th></th></tr></thead>
+    <tbody>${r.milestones.map(m=>{const c=MS(m.key);return `<tr>
+      <td class="tt" style="font-weight:500">${E(c.name)}${c.critical?' <span class="tag">Critical</span>':''}</td>
+      <td>${m.owner?E(U(m.owner).nm):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td class="mono" style="font-size:12px">${fd(m.ideal)}</td>
+      <td class="mono" style="font-size:12px">${fd(m.actual)}</td>
+      <td>${stt(m.status)}</td>
+      <td>${c.approval?(m.approved?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:10.5px;color:var(--mut2);margin-top:2px">${m.approvedBy?E(m.approvedBy):''} ${fd(m.approvedOn)}</div>`:'<span style="color:var(--mut)">Pending</span>'):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td style="font-size:12.5px;color:var(--mut);max-width:180px">${m.comments?E(m.comments):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td style="text-align:right">${canEdit()?`<button class="bt s" onclick="mEditMilestone('${r.id}','${m.key}')">Edit</button>`:''}</td>
+    </tr>`}).join('')}
+    </tbody></table></div></div></div>`;
 }
 
 /* ═══ calendar ══════════════════════════ */
@@ -1289,6 +1348,69 @@ function doAtt(rid){
   R(rid).atts.push(v);logAudit('Added attachment',rid,'—',v);
   shut();draw();toast('Attachment added');persist();
 }
+function mEditBasics(rid){
+  const r=R(rid);
+  show(`<div class="h"><h3>Edit basic information</h3></div>
+  <div class="b"><div class="fg">
+    <div><label>Workstream</label><input id="b-ws" value="${E(r.workstream||'')}"></div>
+    <div><label>Jira #</label><input id="b-jira" value="${E(r.jira||'')}"></div>
+    <div><label>PO</label><input id="b-po" value="${E(r.po||'')}"></div>
+    <div><label>Scrum Master</label><input id="b-sm" value="${E(r.scrum||'')}"></div>
+    <div><label>Business Owner</label><input id="b-bo" value="${E(r.bizOwner||'')}"></div>
+    <div><label>Finance UAT Tester</label><input id="b-fut" value="${E(r.financeUat||'')}"></div>
+  </div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doEditBasics('${rid}')">Save</button></div>`);
+}
+function doEditBasics(rid){
+  const r=R(rid);
+  r.workstream=document.getElementById('b-ws').value.trim();
+  r.jira=document.getElementById('b-jira').value.trim();
+  r.po=document.getElementById('b-po').value.trim();
+  r.scrum=document.getElementById('b-sm').value.trim();
+  r.bizOwner=document.getElementById('b-bo').value.trim();
+  r.financeUat=document.getElementById('b-fut').value.trim();
+  logAudit('Updated basic information',rid,'—','—');
+  shut();draw();toast('Saved');persist();
+}
+function mEditMilestone(rid,key){
+  const r=R(rid),m=r.milestones.find(x=>x.key===key),c=MS(key);
+  show(`<div class="h"><h3>${E(c.name)}</h3><p>${r.ref} · ${E(r.nm)}</p></div>
+  <div class="b"><div class="fg">
+    <div><label>Owner</label><select id="m-owner"><option value="">— none —</option>
+      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${m.owner===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
+    <div><label>Status</label><select id="m-status">
+      ${['notStarted','inProgress','completed','blocked'].map(k=>`<option value="${k}" ${m.status===k?'selected':''}>${STATES[k][0]}</option>`).join('')}</select></div>
+    <div><label>Ideal date</label><input type="date" id="m-ideal" value="${m.ideal||''}"></div>
+    <div><label>Actual date</label><input type="date" id="m-actual" value="${m.actual||''}"></div>
+  </div>
+  ${c.approval?`<div class="fg" style="margin-top:14px">
+    <div><label>Approved</label><select id="m-approved">
+      <option value="0" ${!m.approved?'selected':''}>Not approved</option>
+      <option value="1" ${m.approved?'selected':''}>Approved</option></select></div>
+    <div><label>Approved by</label><input id="m-approvedby" value="${E(m.approvedBy||'')}"></div>
+    <div><label>Approved on</label><input type="date" id="m-approvedon" value="${m.approvedOn||''}"></div>
+  </div>`:''}
+  <div style="margin-top:14px"><label>Comments</label><textarea id="m-comments" rows="3">${E(m.comments||'')}</textarea></div>
+  </div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doEditMilestone('${rid}','${key}')">Save</button></div>`);
+}
+function doEditMilestone(rid,key){
+  const r=R(rid),m=r.milestones.find(x=>x.key===key),c=MS(key);
+  m.owner=document.getElementById('m-owner').value||null;
+  m.status=document.getElementById('m-status').value;
+  m.ideal=document.getElementById('m-ideal').value||null;
+  m.actual=document.getElementById('m-actual').value||null;
+  m.comments=document.getElementById('m-comments').value.trim();
+  if(c.approval){
+    m.approved=document.getElementById('m-approved').value==='1';
+    m.approvedBy=document.getElementById('m-approvedby').value.trim()||null;
+    m.approvedOn=document.getElementById('m-approvedon').value||null;
+  }
+  logAudit(`Updated milestone — ${c.name}`,rid,'—',STATES[m.status][0]);
+  shut();draw();toast('Milestone updated');persist();
+}
 function mNew(){
   show(`<div class="h"><h3>New release</h3><p>The release enters at gate one, grooming session.</p></div>
   <div class="b"><div class="fg">
@@ -1297,8 +1419,19 @@ function mNew(){
     <div><label>Component</label><select id="nc">${comps.map(c=>`<option value="${c.id}">${E(c.nm)}</option>`).join('')}</select></div>
     <div><label>Who is the Developer</label><select id="no">${users.filter(u=>u.role==='Release Management'&&u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
     <div><label>Planned production date</label><input type="date" id="np"></div></div>
-    <div style="margin-top:16px"><label>What is changing</label>
-      <textarea id="nd" rows="3" placeholder="Described in business terms"></textarea></div></div>
+    <div style="margin-top:16px"><label>Summary/Description</label>
+      <textarea id="nd" rows="3" placeholder="Described in business terms"></textarea></div>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+      <div style="font-family:var(--d);font-weight:600;font-size:13px;margin-bottom:12px">Workstream & stakeholders</div>
+      <div class="fg">
+        <div><label>Workstream</label><input id="n-ws" placeholder="e.g. Finance"></div>
+        <div><label>Jira #</label><input id="n-jira" placeholder="e.g. CD-1234"></div>
+        <div><label>PO</label><input id="n-po"></div>
+        <div><label>Scrum Master</label><input id="n-sm"></div>
+        <div><label>Business Owner</label><input id="n-bo"></div>
+        <div><label>Finance UAT Tester</label><input id="n-fut"></div>
+      </div>
+    </div></div>
   <div class="f"><button class="bt" onclick="shut()">Cancel</button>
     <button class="bt p" onclick="doNew()">Create release</button></div>`);
 }
@@ -1308,7 +1441,14 @@ function doNew(){
   const r={id:nid('R'),ref:'REL-'+(1044+rels.length),nm,
     comp:document.getElementById('nc').value,owner:document.getElementById('no').value,
     desc:document.getElementById('nd').value.trim()||'No description given.',
-    plan:document.getElementById('np').value||null,actual:null,cur:'groom',st:blank('groom'),cmts:[],atts:[]};
+    plan:document.getElementById('np').value||null,actual:null,cur:'groom',st:blank('groom'),cmts:[],atts:[],
+    workstream:document.getElementById('n-ws').value.trim(),
+    jira:document.getElementById('n-jira').value.trim(),
+    po:document.getElementById('n-po').value.trim(),
+    scrum:document.getElementById('n-sm').value.trim(),
+    bizOwner:document.getElementById('n-bo').value.trim(),
+    financeUat:document.getElementById('n-fut').value.trim(),
+    milestones:blankMilestones()};
   rels.unshift(r);logAudit('Created release',r.id,'—','Grooming session');
   shut();openR(r.id);toast('Release created');persist();
 }
