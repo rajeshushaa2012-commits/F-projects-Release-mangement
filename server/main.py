@@ -1,13 +1,10 @@
 import json
 import os
 import secrets
-import smtplib
-import socket
 import sqlite3
-from email.mime.text import MIMEText
-from email.utils import formataddr
 from pathlib import Path
 
+import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -28,11 +25,12 @@ if ACCESS_KEY == "relay-dev-key":
 
 STATE_KEYS = ["uid", "users", "comps", "groups", "rels", "apps_", "notifs", "acts", "audit", "tmpl"]
 
-SMTP_HOST = os.environ.get("RELAY_SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("RELAY_SMTP_PORT", "587"))
-SMTP_USER = os.environ.get("RELAY_SMTP_USER")  # a Gmail address
-SMTP_PASS = os.environ.get("RELAY_SMTP_PASS")  # a 16-char Gmail App Password, not the account password
-SMTP_FROM_NAME = os.environ.get("RELAY_SMTP_FROM_NAME", "Relay")
+# Email is sent via Brevo's HTTPS API (not raw SMTP) because most free hosts,
+# including Render's free tier, block outbound SMTP ports to prevent spam abuse.
+# HTTPS (443) is never blocked, so this works everywhere.
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
+SENDER_EMAIL = os.environ.get("RELAY_SMTP_USER")  # must be a sender verified in Brevo
+SENDER_NAME = os.environ.get("RELAY_SMTP_FROM_NAME", "Relay")
 
 app = FastAPI(title="Relay")
 
@@ -105,50 +103,38 @@ async def put_state(request: Request, x_access_key: str | None = Header(default=
 @app.get("/api/email-status")
 def email_status(x_access_key: str | None = Header(default=None)):
     check_key(x_access_key)
-    return {"configured": bool(SMTP_USER and SMTP_PASS), "from": SMTP_USER}
+    return {"configured": bool(BREVO_API_KEY and SENDER_EMAIL), "from": SENDER_EMAIL}
 
 
 @app.post("/api/send-email")
 def send_email(payload: EmailPayload, x_access_key: str | None = Header(default=None)):
     check_key(x_access_key)
-    if not SMTP_USER or not SMTP_PASS:
+    if not BREVO_API_KEY or not SENDER_EMAIL:
         raise HTTPException(
             status_code=503,
-            detail="Email is not configured on the server — set RELAY_SMTP_USER and RELAY_SMTP_PASS.",
+            detail="Email is not configured on the server — set BREVO_API_KEY and RELAY_SMTP_USER.",
         )
     to_addrs = [a.strip() for a in payload.to if a and "@" in a]
     if not to_addrs:
         raise HTTPException(status_code=400, detail="no valid recipient addresses")
 
-    msg = MIMEText(payload.body, "plain", "utf-8")
-    msg["Subject"] = payload.subject
-    msg["From"] = formataddr((SMTP_FROM_NAME, SMTP_USER))
-    msg["To"] = ", ".join(to_addrs)
-
-    orig_getaddrinfo = socket.getaddrinfo
-
-    def ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        # Some hosts (e.g. Render's free tier) have no outbound IPv6 route, but
-        # Gmail's DNS returns an IPv6 address first, causing "Network unreachable"
-        # before a v4 fallback is tried. Force IPv4 resolution for this connection.
-        return orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
-
     try:
-        socket.getaddrinfo = ipv4_only_getaddrinfo
-        try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-                server.starttls()
-                server.login(SMTP_USER, SMTP_PASS)
-                server.sendmail(SMTP_USER, to_addrs, msg.as_string())
-        finally:
-            socket.getaddrinfo = orig_getaddrinfo
-    except smtplib.SMTPAuthenticationError as e:
-        reason = e.smtp_error.decode("utf-8", "ignore") if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
-        raise HTTPException(status_code=502, detail=f"Gmail rejected the login (code {e.smtp_code}): {reason}")
-    except smtplib.SMTPException as e:
-        raise HTTPException(status_code=502, detail=f"SMTP error: {e}")
-    except OSError as e:
-        raise HTTPException(status_code=502, detail=f"Could not reach mail server: {e}")
+        resp = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json"},
+            json={
+                "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+                "to": [{"email": a} for a in to_addrs],
+                "subject": payload.subject,
+                "textContent": payload.body,
+            },
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach Brevo: {e}")
+
+    if resp.status_code >= 300:
+        raise HTTPException(status_code=502, detail=f"Brevo rejected the email ({resp.status_code}): {resp.text}")
 
     return {"ok": True, "sent": len(to_addrs)}
 
