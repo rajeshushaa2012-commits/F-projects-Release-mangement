@@ -289,13 +289,12 @@ let audit=[];
 let tmpl=[];
 
 /* ═══ server sync ═══════════════════════ */
-let KEY=localStorage.getItem('relayKey')||'';
 let emailConfigured=false,emailFrom=null;
-function authHeaders(extra){return Object.assign({'X-Access-Key':KEY},extra||{})}
+const jsonHeaders={'Content-Type':'application/json'};
 async function sendEmail(to,subject,body){
   if(!to||!to.length)return false;
   try{
-    const res=await fetch('/api/send-email',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
+    const res=await fetch('/api/send-email',{method:'POST',credentials:'same-origin',headers:jsonHeaders,
       body:JSON.stringify({to,subject,body})});
     if(!res.ok){const e=await res.json().catch(()=>({}));toast(`Email not sent: ${e.detail||res.status}`);return false}
     return true;
@@ -307,7 +306,7 @@ function fillTmpl(ev,vars){
   return{subject:rep(t.sub),body:rep(t.bd)};
 }
 async function checkEmailStatus(){
-  try{const r=await fetch('/api/email-status',{headers:authHeaders()});
+  try{const r=await fetch('/api/email-status',{credentials:'same-origin'});
     if(r.ok){const j=await r.json();emailConfigured=j.configured;emailFrom=j.from}}
   catch(e){}
 }
@@ -322,46 +321,79 @@ function applyState(s){
 function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl}}
 async function persist(){
   try{
-    const res=await fetch('/api/state',{method:'PUT',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(snapshot())});
-    if(res.status===401){localStorage.removeItem('relayKey');KEY='';toast('Access key rejected — reloading');setTimeout(()=>location.reload(),900)}
+    const res=await fetch('/api/state',{method:'PUT',credentials:'same-origin',headers:jsonHeaders,body:JSON.stringify(snapshot())});
+    if(res.status===401){authUser=null;toast('Session expired — please sign in again');showLogin();}
+    else if(res.status===403){const e=await res.json().catch(()=>({}));toast(`Not saved: ${e.detail||'permission denied'}`)}
   }catch(e){toast('Could not save — check your connection')}
 }
 function isEditing(){
   const el=document.activeElement;
   return!!el&&['INPUT','TEXTAREA','SELECT'].includes(el.tagName);
 }
-function showGate(msg){
+
+/* ═══ login ══════════════════════════════ */
+function showLogin(msg){
   document.getElementById('rail').innerHTML='';
   document.getElementById('crumb').textContent='Sign in';
   document.getElementById('view').innerHTML=`
     <div style="max-width:360px;margin:90px auto" class="c"><div class="b">
-      <h3 style="margin-bottom:6px;font-family:var(--d);font-size:19px;font-weight:700">Relay access key</h3>
-      <p style="color:var(--mut);font-size:13px;margin-bottom:16px">${msg||'Enter the workspace access key to continue.'}</p>
-      <input id="gk" type="password" placeholder="Access key" style="margin-bottom:12px">
-      <button class="bt p" style="width:100%" onclick="submitKey()">Continue</button>
+      <h3 style="margin-bottom:6px;font-family:var(--d);font-size:19px;font-weight:700">Sign in to Relay</h3>
+      <p style="color:var(--mut);font-size:13px;margin-bottom:16px">${msg||'Enter your username and password.'}</p>
+      <label>Username</label><input id="lu" placeholder="Username" style="margin-bottom:12px">
+      <label>Password</label><input id="lp" type="password" placeholder="Password" style="margin-bottom:12px">
+      <div class="er" id="e-login"></div>
+      <button class="bt p" style="width:100%" onclick="submitLogin()">Sign in</button>
     </div></div>`;
-  const gk=document.getElementById('gk');
-  gk.focus();
-  gk.addEventListener('keydown',e=>{if(e.key==='Enter')submitKey()});
+  const lu=document.getElementById('lu');
+  lu.focus();
+  document.getElementById('lp').addEventListener('keydown',e=>{if(e.key==='Enter')submitLogin()});
 }
-function submitKey(){
-  const v=document.getElementById('gk').value.trim();
-  if(!v)return;
-  KEY=v;localStorage.setItem('relayKey',KEY);boot();
+async function submitLogin(){
+  const username=document.getElementById('lu').value.trim(),password=document.getElementById('lp').value;
+  const errEl=document.getElementById('e-login');
+  if(!username||!password){errEl.textContent='Enter both a username and password.';errEl.classList.add('on');return}
+  try{
+    const res=await fetch('/api/auth/login',{method:'POST',credentials:'same-origin',headers:jsonHeaders,
+      body:JSON.stringify({username,password})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){errEl.textContent=j.detail||'Sign in failed.';errEl.classList.add('on');return}
+    authUser=j.user;
+    afterLogin();
+  }catch(e){errEl.textContent='Could not reach the server.';errEl.classList.add('on')}
 }
-async function boot(){
-  if(!KEY){showGate();return}
+async function doLogout(){
+  try{await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin'})}catch(e){}
+  authUser=null;view='dash';
+  showLogin('You have been signed out.');
+}
+async function afterLogin(){
   let res;
-  try{res=await fetch('/api/state',{headers:authHeaders()})}
+  try{res=await fetch('/api/state',{credentials:'same-origin'})}
   catch(e){document.getElementById('view').innerHTML='<div class="ept"><h4>Cannot reach the server</h4><p>Check that the Relay backend is running.</p></div>';return}
-  if(res.status===401){localStorage.removeItem('relayKey');KEY='';showGate('That key was not accepted. Try again.');return}
-  applyState(await res.json());
+  if(res.status===401){authUser=null;showLogin('Your session expired. Please sign in again.');return}
+  if(res.status===403){
+    // Logged in, but no view_releases permission — still a valid session, just start on a page they can see.
+    view=hasPerm('manage_users')?'accts':'dash';
+  }else{
+    applyState(await res.json());
+  }
   checkEmailStatus();
   draw();
+}
+async function boot(){
+  let res;
+  try{res=await fetch('/api/auth/me',{credentials:'same-origin'})}
+  catch(e){document.getElementById('view').innerHTML='<div class="ept"><h4>Cannot reach the server</h4><p>Check that the Relay backend is running.</p></div>';return}
+  if(!res.ok){showLogin();return}
+  authUser=await res.json();
+  await afterLogin();
   setInterval(async()=>{
     if(isEditing()||document.getElementById('scrim').classList.contains('on'))return;
-    try{const r=await fetch('/api/state',{headers:authHeaders()});if(r.ok){applyState(await r.json());draw()}}
-    catch(e){}
+    try{
+      const r=await fetch('/api/state',{credentials:'same-origin'});
+      if(r.status===401){authUser=null;showLogin('Your session expired. Please sign in again.');return}
+      if(r.ok){applyState(await r.json());draw()}
+    }catch(e){}
   },6000);
 }
 
@@ -369,9 +401,14 @@ async function boot(){
 let me='U1', view='dash', openRel=null, calMonth=new Date(2026,8,1);
 let flt={q:'',comp:'all',stage:'all',owner:'all',st:'all'};
 
-const ROLE=()=>U(me).role;
-const canEdit=()=>['Admin','Release Management'].includes(ROLE());
-const isAdmin=()=>ROLE()==='Admin';
+// authUser is the real logged-in account (set by boot() after /api/auth/me).
+// `me` above is a separate, older concept — which of the demo release actors
+// (Meera/Rajesh/etc.) an action gets attributed to — kept as-is for now and
+// unified with real accounts in a later phase.
+let authUser=null;
+const hasPerm=k=>!!authUser&&(authUser.is_admin||authUser.permissions.includes(k));
+const canEdit=()=>hasPerm('create_release')||hasPerm('edit_release')||hasPerm('delete_release');
+const isAdmin=()=>!!authUser&&authUser.is_admin;
 
 /* ═══ helpers ═══════════════════════════ */
 const E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -444,12 +481,15 @@ const NAV=[
    {k:'aud', l:'Audit trail',ic:'📋'}]},
  {g:'Settings',admin:1,items:[
    {k:'usr',l:'Users and email',ic:'👤'},{k:'grp',l:'Approval groups',ic:'✅'},
-   {k:'cmp',l:'Components',ic:'🧩'},{k:'tpl',l:'Email templates',ic:'📝'}]}
+   {k:'cmp',l:'Components',ic:'🧩'},{k:'tpl',l:'Email templates',ic:'📝'}]},
+ {g:'Administration',adminOrPerm:'manage_users',items:[
+   {k:'accts',l:'User accounts',ic:'🔑'}]}
 ];
 function drawNav(){
   let h=`<div class="mark"><b>Relay</b><i></i></div>`;
   NAV.forEach(g=>{
     if(g.admin&&!isAdmin())return;
+    if(g.adminOrPerm&&!hasPerm(g.adminOrPerm))return;
     h+=`<div class="ngrp">${g.g}</div>`;
     g.items.forEach(it=>{
       const n=it.ct?it.ct():0;
@@ -458,13 +498,12 @@ function drawNav(){
     });
   });
   document.getElementById('rail').innerHTML=h;
-  document.getElementById('roles').innerHTML=['U1','U2','U3'].map(u=>{
-    const r=U(u).role;
-    return `<button class="${me===u?'on':''}" onclick="setMe('${u}')">${r==='Admin'?'Admin':r==='Release Management'?'Release mgmt':'Approver'}</button>`
-  }).join('');
+  document.getElementById('roles').innerHTML=authUser?`
+    <span style="font-size:12.5px;color:var(--mut);margin-right:4px">${E(authUser.name)}${authUser.is_admin?' · Admin':''}</span>
+    <button onclick="go('mypw')">Change password</button>
+    <button onclick="doLogout()">Logout</button>`:'';
 }
-function setMe(u){me=u;if(!isAdmin()&&['usr','grp','cmp','tpl'].includes(view))view='dash';draw()}
-function go(k){view=k;openRel=null;draw();window.scrollTo(0,0)}
+function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();draw();window.scrollTo(0,0)}
 function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
 
 /* ═══ router ════════════════════════════ */
@@ -479,29 +518,209 @@ const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'
  usr:['Users and email','The single source for every recipient list.'],
  grp:['Approval groups','Who signs each gate, and what counts as approved.'],
  cmp:['Components','Ownership drives who gets change alerts.'],
- tpl:['Email templates','Wording for every message the application sends.']};
+ tpl:['Email templates','Wording for every message the application sends.'],
+ mypw:['Change password','Update the password for your own account.'],
+ accts:['User accounts','Create developer/user accounts and control what each one can access.']};
 
 function draw(){
   drawNav();
   document.getElementById('crumb').textContent=
     (NAV.find(g=>g.items.some(i=>i.k===view))||{g:'Overview'}).g;
   const v=document.getElementById('view');
-  if(!canEdit()&&view!=='rel'){v.innerHTML=vRO();return}
+  if(view==='mypw'){v.innerHTML=vMypw();return}
+  if(view==='accts'){
+    if(!hasPerm('manage_users')){v.innerHTML=vRO('You need the manage_users permission to see this page.');return}
+    v.innerHTML=vAccts();return;
+  }
+  if(['usr','grp','cmp','tpl'].includes(view)&&!isAdmin()){v.innerHTML=vRO('This page is limited to Admin.');return}
+  if(!hasPerm('view_releases')){v.innerHTML=vRO('You need the view_releases permission to see this page.');return}
   v.innerHTML=({dash:vDash,mine:vMine,rels:vRels,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
     aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
 }
 const head=(k,extra='')=>{const[t,d]=TITLES[k];
   return `<div class="ph"><h1>${t}</h1>${d?`<p>${d}</p>`:''}${extra?`<div class="acts">${extra}</div>`:''}</div>`};
 
-function vRO(){
-  return `<div class="ph"><h1>Approver access</h1>
-    <p>Approvers record decisions through the secure single-use link emailed to them, so the workspace itself stays limited to Admin and Release Management. Switch role above to keep exploring.</p></div>
+function vRO(reason){
+  return `<div class="ph"><h1>Limited access</h1>
+    <p>${E(reason||"You don't have permission to see this page.")} Ask an Admin to grant you access under User accounts.</p></div>
   <div class="c"><div class="b"><div class="kv">
-    <div class="k">Signed in</div><div>${E(U(me).nm)}</div>
-    <div class="k">Email</div><div class="mono" style="font-size:12.5px">${E(U(me).em)}</div>
-    <div class="k">Role</div><div>${E(U(me).role)}</div>
-    <div class="k">Responsibility</div><div>${E(U(me).resp)}</div>
+    <div class="k">Signed in as</div><div>${E(authUser?.name||'—')}</div>
+    <div class="k">Username</div><div class="mono" style="font-size:12.5px">${E(authUser?.username||'—')}</div>
+    <div class="k">Permissions</div><div>${authUser&&authUser.permissions.length?authUser.permissions.map(p=>E(p)).join(', '):'None assigned'}</div>
   </div></div></div>`;
+}
+
+/* ═══ my account ═════════════════════════ */
+function vMypw(){
+  return head('mypw')+`
+  <div class="c"><div class="b" style="max-width:420px">
+    <label>Current password</label><input id="pw-old" type="password" style="margin-bottom:14px">
+    <label>New password</label><input id="pw-new" type="password" style="margin-bottom:14px">
+    <label>Confirm new password</label><input id="pw-new2" type="password" style="margin-bottom:8px">
+    <div class="er" id="e-pw"></div>
+    <button class="bt p" style="margin-top:8px" onclick="submitChangePassword()">Change password</button>
+  </div></div>`;
+}
+async function submitChangePassword(){
+  const oldP=document.getElementById('pw-old').value,newP=document.getElementById('pw-new').value,new2=document.getElementById('pw-new2').value;
+  const err=document.getElementById('e-pw');err.classList.remove('on');
+  if(!oldP||!newP){err.textContent='Enter your current and new password.';err.classList.add('on');return}
+  if(newP!==new2){err.textContent='New passwords do not match.';err.classList.add('on');return}
+  if(newP.length<6){err.textContent='New password must be at least 6 characters.';err.classList.add('on');return}
+  try{
+    const res=await fetch('/api/auth/change-password',{method:'POST',credentials:'same-origin',headers:jsonHeaders,
+      body:JSON.stringify({old_password:oldP,new_password:newP})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){err.textContent=j.detail||'Could not change password.';err.classList.add('on');return}
+    document.getElementById('pw-old').value='';document.getElementById('pw-new').value='';document.getElementById('pw-new2').value='';
+    if(authUser)authUser.must_change_password=false;
+    toast('Password changed');
+  }catch(e){err.textContent='Could not reach the server.';err.classList.add('on')}
+}
+
+/* ═══ user accounts (admin) ═════════════════ */
+let accounts=[],permissionsCatalog=[];
+async function loadAccounts(){
+  try{
+    const[ar,pr]=await Promise.all([
+      fetch('/api/users',{credentials:'same-origin'}),
+      fetch('/api/permissions',{credentials:'same-origin'})
+    ]);
+    if(ar.ok)accounts=await ar.json();
+    if(pr.ok)permissionsCatalog=await pr.json();
+  }catch(e){}
+  if(view==='accts')draw();
+}
+function vAccts(){
+  return head('accts',`<button class="bt p" onclick="mNewAccount()">Add user</button>`)+`
+  <div class="c"><div class="b flush"><div class="tw"><table>
+    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Admin</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
+    <tbody>${accounts.length?accounts.map(a=>`<tr>
+      <td class="tt">${E(a.name)}</td>
+      <td class="mono" style="font-size:11.5px">${E(a.username)}</td>
+      <td class="mono" style="font-size:11.5px;color:var(--mut)">${E(a.email||'—')}</td>
+      <td>${a.is_admin?'<span class="tick">✓ Admin</span>':'<span style="color:var(--mut2)">—</span>'}</td>
+      <td style="font-size:11.5px;color:var(--mut);max-width:220px">${a.is_admin?'All (Admin)':(a.permissions.length?a.permissions.map(p=>E(p)).join(', '):'None')}</td>
+      <td>${a.active?'<span class="stt s-ok"><i></i>Active</span>':'<span class="stt s-none"><i></i>Inactive</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="bt s" onclick="mEditAccount(${a.id})">Edit</button>
+        <button class="bt s" onclick="mResetAccountPassword(${a.id})">Reset password</button>
+        ${!a.is_admin?`<button class="bt s" onclick="mAccountPermissions(${a.id})">Permissions</button>`:''}
+        <button class="bt s" onclick="toggleAccountActive(${a.id},${!a.active})">${a.active?'Deactivate':'Activate'}</button>
+      </td>
+    </tr>`).join(''):'<tr><td colspan="7" style="padding:24px;color:var(--mut);text-align:center">Loading…</td></tr>'}
+    </tbody></table></div></div></div>`;
+}
+function mNewAccount(){
+  show(`<div class="h"><h3>Add user account</h3><p>Creates a real login for a developer or team member.</p></div>
+  <div class="b"><div class="fg">
+    <div><label>Developer name</label><input id="na-name"><div class="er" id="e-na-name">A name is required.</div></div>
+    <div><label>Username</label><input id="na-user"><div class="er" id="e-na-user">A username is required.</div></div>
+    <div><label>Password</label><input id="na-pw" type="password"><div class="er" id="e-na-pw">At least 6 characters.</div></div>
+    <div><label>Confirm password</label><input id="na-pw2" type="password"><div class="er" id="e-na-pw2">Passwords must match.</div></div>
+    <div><label>Email (optional)</label><input id="na-email"></div>
+    ${isAdmin()?`<div><label>Admin access</label><select id="na-admin"><option value="0">No — normal user</option><option value="1">Yes — full Admin</option></select></div>`:''}
+  </div>
+  <div style="margin-top:16px"><label>Permissions</label><div class="chips" id="na-perms">
+    ${permissionsCatalog.map(p=>`<label class="chip" style="cursor:pointer"><input type="checkbox" value="${p.key}" style="margin-right:6px">${E(p.label)}</label>`).join('')}
+  </div></div>
+  </div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doNewAccount()">Create user</button></div>`);
+}
+async function doNewAccount(){
+  const name=document.getElementById('na-name').value.trim();
+  const username=document.getElementById('na-user').value.trim();
+  const pw=document.getElementById('na-pw').value,pw2=document.getElementById('na-pw2').value;
+  const email=document.getElementById('na-email').value.trim()||null;
+  const isAdminEl=document.getElementById('na-admin');
+  const isAdminFlag=isAdminEl?isAdminEl.value==='1':false;
+  const perms=[...document.querySelectorAll('#na-perms input:checked')].map(i=>i.value);
+  ['e-na-name','e-na-user','e-na-pw','e-na-pw2'].forEach(id=>document.getElementById(id).classList.remove('on'));
+  let bad=false;
+  if(!name){document.getElementById('e-na-name').classList.add('on');bad=true}
+  if(!username){document.getElementById('e-na-user').classList.add('on');bad=true}
+  if(pw.length<6){document.getElementById('e-na-pw').classList.add('on');bad=true}
+  if(pw!==pw2){document.getElementById('e-na-pw2').classList.add('on');bad=true}
+  if(bad)return;
+  try{
+    const res=await fetch('/api/users',{method:'POST',credentials:'same-origin',headers:jsonHeaders,
+      body:JSON.stringify({name,username,password:pw,confirm_password:pw2,email,is_admin:isAdminFlag,permissions:perms})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){toast(j.detail||'Could not create user');return}
+    shut();toast(`${name} created`);loadAccounts();
+  }catch(e){toast('Could not reach the server')}
+}
+function mEditAccount(id){
+  const a=accounts.find(x=>x.id===id);if(!a)return;
+  show(`<div class="h"><h3>Edit ${E(a.name)}</h3></div>
+  <div class="b"><div class="fg">
+    <div><label>Name</label><input id="ea-name" value="${E(a.name)}"></div>
+    <div><label>Email</label><input id="ea-email" value="${E(a.email||'')}"></div>
+    ${isAdmin()?`<div><label>Admin access</label><select id="ea-admin">
+      <option value="0" ${!a.is_admin?'selected':''}>No — normal user</option>
+      <option value="1" ${a.is_admin?'selected':''}>Yes — full Admin</option></select></div>`:''}
+  </div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doEditAccount(${id})">Save</button></div>`);
+}
+async function doEditAccount(id){
+  const name=document.getElementById('ea-name').value.trim();
+  const email=document.getElementById('ea-email').value.trim()||null;
+  const adminEl=document.getElementById('ea-admin');
+  const body={name,email};
+  if(adminEl)body.is_admin=adminEl.value==='1';
+  if(!name){toast('Name is required');return}
+  try{
+    const res=await fetch(`/api/users/${id}`,{method:'PUT',credentials:'same-origin',headers:jsonHeaders,body:JSON.stringify(body)});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){toast(j.detail||'Could not save');return}
+    shut();toast('Saved');loadAccounts();
+  }catch(e){toast('Could not reach the server')}
+}
+function mResetAccountPassword(id){
+  const a=accounts.find(x=>x.id===id);if(!a)return;
+  show(`<div class="h"><h3>Reset password — ${E(a.name)}</h3><p>They'll need to sign in with this new password next time.</p></div>
+  <div class="b"><label>New password</label><input id="rp-pw" type="password">
+    <div class="er" id="e-rp-pw">At least 6 characters.</div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt d" onclick="doResetAccountPassword(${id})">Reset password</button></div>`);
+}
+async function doResetAccountPassword(id){
+  const pw=document.getElementById('rp-pw').value;
+  if(pw.length<6){document.getElementById('e-rp-pw').classList.add('on');return}
+  try{
+    const res=await fetch(`/api/users/${id}/reset-password`,{method:'POST',credentials:'same-origin',headers:jsonHeaders,body:JSON.stringify({new_password:pw})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){toast(j.detail||'Could not reset password');return}
+    shut();toast('Password reset');
+  }catch(e){toast('Could not reach the server')}
+}
+function mAccountPermissions(id){
+  const a=accounts.find(x=>x.id===id);if(!a)return;
+  show(`<div class="h"><h3>Permissions — ${E(a.name)}</h3></div>
+  <div class="b"><div class="chips">
+    ${permissionsCatalog.map(p=>`<label class="chip" style="cursor:pointer"><input type="checkbox" value="${p.key}" ${a.permissions.includes(p.key)?'checked':''} style="margin-right:6px">${E(p.label)}</label>`).join('')}
+  </div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doAccountPermissions(${id})">Save</button></div>`);
+}
+async function doAccountPermissions(id){
+  const perms=[...document.querySelectorAll('#md input:checked')].map(i=>i.value);
+  try{
+    const res=await fetch(`/api/users/${id}/permissions`,{method:'POST',credentials:'same-origin',headers:jsonHeaders,body:JSON.stringify({permissions:perms})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){toast(j.detail||'Could not save permissions');return}
+    shut();toast('Permissions updated');loadAccounts();
+  }catch(e){toast('Could not reach the server')}
+}
+async function toggleAccountActive(id,makeActive){
+  try{
+    const res=await fetch(`/api/users/${id}/${makeActive?'activate':'deactivate'}`,{method:'POST',credentials:'same-origin'});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){toast(j.detail||'Could not update status');return}
+    toast(makeActive?'Activated':'Deactivated');loadAccounts();
+  }catch(e){toast('Could not reach the server')}
 }
 
 /* ═══ help card ═════════════════════════ */
@@ -538,7 +757,8 @@ function vDash(){
   const up=rels.filter(r=>r.plan&&r.cur!=='done').sort((a,b)=>a.plan.localeCompare(b.plan)).slice(0,5);
   const done=rels.filter(r=>r.cur==='done').slice(0,4);
 
-  return head('dash')+helpCard()+`
+  return head('dash')+(authUser&&authUser.must_change_password?`<div class="sec"><div class="mt w">
+    You're signed in with a temporary password. <button class="lk" onclick="go('mypw')">Change it now</button>.</div></div>`:'')+helpCard()+`
   <div class="sec"><div class="stats">
     <div class="stat"><div class="l">In progress</div><div class="n">${inprog}</div><div class="h">across ${comps.length} components</div></div>
     <div class="stat"><div class="l">Awaiting approval</div><div class="n ${waiting?'w':''}">${waiting}</div><div class="h">requests open</div></div>

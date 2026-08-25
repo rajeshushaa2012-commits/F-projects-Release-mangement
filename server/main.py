@@ -1,14 +1,19 @@
 import json
 import os
-import secrets
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
+
+try:
+    from . import auth
+except ImportError:
+    import auth
 
 BASE = Path(__file__).resolve().parent
 load_dotenv(BASE / ".env")
@@ -18,12 +23,16 @@ DB_PATH = DATA_DIR / "relay.db"
 SEED_PATH = BASE / "seed.json"
 HTML_PATH = BASE.parent / "index.html"
 
-ACCESS_KEY = os.environ.get("RELAY_ACCESS_KEY", "relay-dev-key")
-if ACCESS_KEY == "relay-dev-key":
-    print("WARNING: RELAY_ACCESS_KEY not set — using the default dev key. "
-          "Set a real secret before hosting this publicly.")
-
 STATE_KEYS = ["uid", "users", "comps", "groups", "rels", "apps_", "notifs", "acts", "audit", "tmpl"]
+
+SESSION_COOKIE = "relay_session"
+SESSION_LIFETIME = timedelta(hours=12)
+# Cookies are HttpOnly (JS can never read the token, so it can't be stolen via XSS)
+# and SameSite=Lax (sent on normal same-site navigation, blocked on cross-site
+# POSTs — a reasonable CSRF baseline for a single-origin app like this one).
+# `secure=False` is a deliberate trade-off so this still works over plain
+# http://127.0.0.1 during local development; Render serves everything over
+# HTTPS anyway, so the cookie is still only ever transmitted encrypted there.
 
 # Email is sent via Brevo's HTTPS API (not raw SMTP) because most free hosts,
 # including Render's free tier, block outbound SMTP ports to prevent spam abuse.
@@ -49,21 +58,423 @@ def get_conn():
         "data TEXT NOT NULL, "
         "updated_at TEXT NOT NULL)"
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS auth_users ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "username TEXT NOT NULL UNIQUE, "
+        "name TEXT NOT NULL, "
+        "email TEXT, "
+        "password_salt TEXT NOT NULL, "
+        "password_hash TEXT NOT NULL, "
+        "is_admin INTEGER NOT NULL DEFAULT 0, "
+        "active INTEGER NOT NULL DEFAULT 1, "
+        "must_change_password INTEGER NOT NULL DEFAULT 0, "
+        "created_at TEXT NOT NULL, "
+        "created_by TEXT, "
+        "updated_at TEXT, "
+        "updated_by TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS user_permissions ("
+        "user_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, "
+        "perm_key TEXT NOT NULL, "
+        "PRIMARY KEY (user_id, perm_key))"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sessions ("
+        "token TEXT PRIMARY KEY, "
+        "user_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, "
+        "created_at TEXT NOT NULL, "
+        "expires_at TEXT NOT NULL)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
     return conn
+
+
+def seed_admin():
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()
+        if row[0] > 0:
+            return
+        salt, phash = auth.hash_password("admin")
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            conn.execute(
+                "INSERT INTO auth_users (username, name, email, password_salt, password_hash, "
+                "is_admin, active, must_change_password, created_at, created_by) "
+                "VALUES ('admin','Administrator',NULL,?,?,1,1,1,?,'system')",
+                (salt, phash, now),
+            )
+            conn.commit()
+            print("Seeded default admin account (username: admin, password: admin) — "
+                  "change this password immediately after first login.")
+        except sqlite3.IntegrityError:
+            pass  # another worker process already seeded it
+    finally:
+        conn.close()
+
+
+seed_admin()
 
 
 def load_seed():
     return json.loads(SEED_PATH.read_text(encoding="utf-8"))
 
 
-def check_key(x_access_key: str | None):
-    if not x_access_key or not secrets.compare_digest(x_access_key, ACCESS_KEY):
-        raise HTTPException(status_code=401, detail="invalid or missing access key")
+def row_to_user(row, permissions=None):
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "name": row["name"],
+        "email": row["email"],
+        "is_admin": bool(row["is_admin"]),
+        "active": bool(row["active"]),
+        "must_change_password": bool(row["must_change_password"]),
+        "created_at": row["created_at"],
+        "permissions": permissions if permissions is not None else [],
+    }
+
+
+def get_user_permissions(conn, user_id: int) -> list[str]:
+    rows = conn.execute("SELECT perm_key FROM user_permissions WHERE user_id = ?", (user_id,)).fetchall()
+    return [r[0] for r in rows]
+
+
+def get_current_user(relay_session: str | None = Cookie(default=None)):
+    if not relay_session:
+        raise HTTPException(status_code=401, detail="not logged in")
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT s.user_id, s.expires_at, u.* FROM sessions s "
+            "JOIN auth_users u ON u.id = s.user_id WHERE s.token = ?",
+            (relay_session,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=401, detail="session expired or invalid")
+        if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
+            conn.execute("DELETE FROM sessions WHERE token = ?", (relay_session,))
+            conn.commit()
+            raise HTTPException(status_code=401, detail="session expired")
+        if not row["active"]:
+            raise HTTPException(status_code=401, detail="account is deactivated")
+        perms = get_user_permissions(conn, row["id"])
+        return row_to_user(row, perms)
+    finally:
+        conn.close()
+
+
+def require_permission(perm_key: str):
+    def dep(user: dict = Depends(get_current_user)):
+        if not user["is_admin"] and perm_key not in user["permissions"]:
+            raise HTTPException(status_code=403, detail=f"missing permission: {perm_key}")
+        return user
+    return dep
+
+
+def require_admin(user: dict = Depends(get_current_user)):
+    if not user["is_admin"]:
+        raise HTTPException(status_code=403, detail="admin access required")
+    return user
+
+
+def require_release_view(user: dict = Depends(get_current_user)):
+    if not user["is_admin"] and "view_releases" not in user["permissions"]:
+        raise HTTPException(status_code=403, detail="missing permission: view_releases")
+    return user
+
+
+def require_release_edit(user: dict = Depends(get_current_user)):
+    # The release data model is still one whole-state blob (Phase 3 will split
+    # it into real create/edit/delete endpoints), so for now any one of the
+    # three release-editing permissions is accepted as "can save release state".
+    editing_perms = {"create_release", "edit_release", "delete_release"}
+    if not user["is_admin"] and not (editing_perms & set(user["permissions"])):
+        raise HTTPException(status_code=403, detail="missing permission: create_release, edit_release or delete_release")
+    return user
+
+
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+
+class ChangePasswordPayload(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class CreateUserPayload(BaseModel):
+    name: str
+    username: str
+    password: str
+    confirm_password: str
+    email: str | None = None
+    is_admin: bool = False
+    permissions: list[str] = []
+
+
+class UpdateUserPayload(BaseModel):
+    name: str
+    email: str | None = None
+    is_admin: bool | None = None
+
+
+class ResetPasswordPayload(BaseModel):
+    new_password: str
+
+
+class PermissionsPayload(BaseModel):
+    permissions: list[str]
+
+
+def create_session(conn, user_id: int) -> str:
+    token = auth.new_session_token()
+    now = datetime.now(timezone.utc)
+    expires = now + SESSION_LIFETIME
+    conn.execute(
+        "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+        (token, user_id, now.isoformat(), expires.isoformat()),
+    )
+    conn.commit()
+    return token
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginPayload, response: Response):
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT * FROM auth_users WHERE username = ?", (payload.username.strip(),)).fetchone()
+        if row is None or not auth.verify_password(payload.password, row["password_salt"], row["password_hash"]):
+            raise HTTPException(status_code=401, detail="invalid username or password")
+        if not row["active"]:
+            raise HTTPException(status_code=401, detail="this account has been deactivated")
+        token = create_session(conn, row["id"])
+        response.set_cookie(
+            SESSION_COOKIE, token,
+            max_age=int(SESSION_LIFETIME.total_seconds()),
+            httponly=True, samesite="lax", path="/",
+        )
+        perms = get_user_permissions(conn, row["id"])
+        return {"ok": True, "user": row_to_user(row, perms)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response, relay_session: str | None = Cookie(default=None)):
+    if relay_session:
+        conn = get_conn()
+        try:
+            conn.execute("DELETE FROM sessions WHERE token = ?", (relay_session,))
+            conn.commit()
+        finally:
+            conn.close()
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def me(user: dict = Depends(get_current_user)):
+    return user
+
+
+@app.post("/api/auth/change-password")
+def change_password(payload: ChangePasswordPayload, user: dict = Depends(get_current_user)):
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT * FROM auth_users WHERE id = ?", (user["id"],)).fetchone()
+        if not auth.verify_password(payload.old_password, row["password_salt"], row["password_hash"]):
+            raise HTTPException(status_code=401, detail="current password is incorrect")
+        if len(payload.new_password) < 6:
+            raise HTTPException(status_code=400, detail="new password must be at least 6 characters")
+        salt, phash = auth.hash_password(payload.new_password)
+        conn.execute(
+            "UPDATE auth_users SET password_salt=?, password_hash=?, must_change_password=0, "
+            "updated_at=?, updated_by=? WHERE id=?",
+            (salt, phash, datetime.now(timezone.utc).isoformat(), user["username"], user["id"]),
+        )
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/permissions")
+def list_permissions(user: dict = Depends(get_current_user)):
+    return [{"key": k, "label": label} for k, label in auth.PERMISSIONS]
+
+
+@app.get("/api/users")
+def list_users(user: dict = Depends(require_permission("manage_users"))):
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("SELECT * FROM auth_users ORDER BY id").fetchall()
+        return [row_to_user(r, get_user_permissions(conn, r["id"])) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/users")
+def create_user(payload: CreateUserPayload, admin_user: dict = Depends(require_permission("manage_users"))):
+    if payload.password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="passwords do not match")
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="password must be at least 6 characters")
+    if not payload.username.strip() or not payload.name.strip():
+        raise HTTPException(status_code=400, detail="name and username are required")
+    if payload.is_admin and not admin_user["is_admin"]:
+        raise HTTPException(status_code=403, detail="only an Admin can grant Admin access")
+    bad_perms = set(payload.permissions) - auth.PERMISSION_KEYS
+    if bad_perms:
+        raise HTTPException(status_code=400, detail=f"unknown permissions: {sorted(bad_perms)}")
+
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        existing = conn.execute("SELECT id FROM auth_users WHERE username = ?", (payload.username.strip(),)).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail="that username is already taken")
+        salt, phash = auth.hash_password(payload.password)
+        now = datetime.now(timezone.utc).isoformat()
+        cur = conn.execute(
+            "INSERT INTO auth_users (username, name, email, password_salt, password_hash, is_admin, "
+            "active, must_change_password, created_at, created_by) VALUES (?,?,?,?,?,?,1,0,?,?)",
+            (payload.username.strip(), payload.name.strip(), payload.email, salt, phash,
+             1 if payload.is_admin else 0, now, admin_user["username"]),
+        )
+        new_id = cur.lastrowid
+        for perm in payload.permissions:
+            conn.execute("INSERT OR IGNORE INTO user_permissions (user_id, perm_key) VALUES (?,?)", (new_id, perm))
+        conn.commit()
+        row = conn.execute("SELECT * FROM auth_users WHERE id = ?", (new_id,)).fetchone()
+        return row_to_user(row, get_user_permissions(conn, new_id))
+    finally:
+        conn.close()
+
+
+@app.put("/api/users/{target_id}")
+def update_user(target_id: int, payload: UpdateUserPayload, admin_user: dict = Depends(require_permission("manage_users"))):
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT * FROM auth_users WHERE id = ?", (target_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        is_admin = row["is_admin"]
+        if payload.is_admin is not None and bool(payload.is_admin) != bool(row["is_admin"]):
+            if not admin_user["is_admin"]:
+                raise HTTPException(status_code=403, detail="only an Admin can change Admin access")
+            if row["is_admin"] and not payload.is_admin:
+                remaining = conn.execute(
+                    "SELECT COUNT(*) FROM auth_users WHERE is_admin=1 AND active=1 AND id != ?", (target_id,)
+                ).fetchone()[0]
+                if remaining == 0:
+                    raise HTTPException(status_code=400, detail="cannot remove the last remaining Admin")
+            is_admin = 1 if payload.is_admin else 0
+        conn.execute(
+            "UPDATE auth_users SET name=?, email=?, is_admin=?, updated_at=?, updated_by=? WHERE id=?",
+            (payload.name.strip(), payload.email, is_admin, datetime.now(timezone.utc).isoformat(),
+             admin_user["username"], target_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM auth_users WHERE id = ?", (target_id,)).fetchone()
+        return row_to_user(row, get_user_permissions(conn, target_id))
+    finally:
+        conn.close()
+
+
+@app.post("/api/users/{target_id}/reset-password")
+def reset_password(target_id: int, payload: ResetPasswordPayload, admin_user: dict = Depends(require_permission("manage_users"))):
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="new password must be at least 6 characters")
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT id FROM auth_users WHERE id = ?", (target_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        salt, phash = auth.hash_password(payload.new_password)
+        conn.execute(
+            "UPDATE auth_users SET password_salt=?, password_hash=?, must_change_password=1, "
+            "updated_at=?, updated_by=? WHERE id=?",
+            (salt, phash, datetime.now(timezone.utc).isoformat(), admin_user["username"], target_id),
+        )
+        # Force re-login everywhere else after a password reset.
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (target_id,))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/users/{target_id}/permissions")
+def set_permissions(target_id: int, payload: PermissionsPayload, admin_user: dict = Depends(require_permission("manage_users"))):
+    bad_perms = set(payload.permissions) - auth.PERMISSION_KEYS
+    if bad_perms:
+        raise HTTPException(status_code=400, detail=f"unknown permissions: {sorted(bad_perms)}")
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT id FROM auth_users WHERE id = ?", (target_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        conn.execute("DELETE FROM user_permissions WHERE user_id = ?", (target_id,))
+        for perm in payload.permissions:
+            conn.execute("INSERT OR IGNORE INTO user_permissions (user_id, perm_key) VALUES (?,?)", (target_id, perm))
+        conn.execute(
+            "UPDATE auth_users SET updated_at=?, updated_by=? WHERE id=?",
+            (datetime.now(timezone.utc).isoformat(), admin_user["username"], target_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM auth_users WHERE id = ?", (target_id,)).fetchone()
+        return row_to_user(row, get_user_permissions(conn, target_id))
+    finally:
+        conn.close()
+
+
+def _set_active(target_id: int, active: bool, admin_user: dict):
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT * FROM auth_users WHERE id = ?", (target_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        if not active and row["is_admin"]:
+            remaining = conn.execute(
+                "SELECT COUNT(*) FROM auth_users WHERE is_admin=1 AND active=1 AND id != ?", (target_id,)
+            ).fetchone()[0]
+            if remaining == 0:
+                raise HTTPException(status_code=400, detail="cannot deactivate the last remaining Admin")
+        conn.execute(
+            "UPDATE auth_users SET active=?, updated_at=?, updated_by=? WHERE id=?",
+            (1 if active else 0, datetime.now(timezone.utc).isoformat(), admin_user["username"], target_id),
+        )
+        if not active:
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (target_id,))
+        conn.commit()
+        row = conn.execute("SELECT * FROM auth_users WHERE id = ?", (target_id,)).fetchone()
+        return row_to_user(row, get_user_permissions(conn, target_id))
+    finally:
+        conn.close()
+
+
+@app.post("/api/users/{target_id}/activate")
+def activate_user(target_id: int, admin_user: dict = Depends(require_permission("manage_users"))):
+    return _set_active(target_id, True, admin_user)
+
+
+@app.post("/api/users/{target_id}/deactivate")
+def deactivate_user(target_id: int, admin_user: dict = Depends(require_permission("manage_users"))):
+    return _set_active(target_id, False, admin_user)
 
 
 @app.get("/api/state")
-def get_state(x_access_key: str | None = Header(default=None)):
-    check_key(x_access_key)
+def get_state(user: dict = Depends(require_release_view)):
     conn = get_conn()
     try:
         row = conn.execute("SELECT data FROM state WHERE id = 1").fetchone()
@@ -81,8 +492,7 @@ def get_state(x_access_key: str | None = Header(default=None)):
 
 
 @app.put("/api/state")
-async def put_state(request: Request, x_access_key: str | None = Header(default=None)):
-    check_key(x_access_key)
+async def put_state(request: Request, user: dict = Depends(require_release_edit)):
     body = await request.json()
     missing = [k for k in STATE_KEYS if k not in body]
     if missing:
@@ -101,14 +511,12 @@ async def put_state(request: Request, x_access_key: str | None = Header(default=
 
 
 @app.get("/api/email-status")
-def email_status(x_access_key: str | None = Header(default=None)):
-    check_key(x_access_key)
+def email_status(user: dict = Depends(get_current_user)):
     return {"configured": bool(BREVO_API_KEY and SENDER_EMAIL), "from": SENDER_EMAIL}
 
 
 @app.post("/api/send-email")
-def send_email(payload: EmailPayload, x_access_key: str | None = Header(default=None)):
-    check_key(x_access_key)
+def send_email(payload: EmailPayload, user: dict = Depends(get_current_user)):
     if not BREVO_API_KEY or not SENDER_EMAIL:
         raise HTTPException(
             status_code=503,
