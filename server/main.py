@@ -18,7 +18,7 @@ DATA_DIR = Path(os.environ.get("RELAY_DATA_DIR", BASE))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "relay.db"
 SEED_PATH = BASE / "seed.json"
-HTML_PATH = BASE.parent / "relay-v2 1.html"
+HTML_PATH = BASE.parent / "index.html"
 
 ACCESS_KEY = os.environ.get("RELAY_ACCESS_KEY", "relay-dev-key")
 if ACCESS_KEY == "relay-dev-key":
