@@ -3,12 +3,7 @@ services:
     name: relay-release-management
     runtime: docker
     dockerfilePath: ./Dockerfile
+    plan: free
     envVars:
       - key: RELAY_ACCESS_KEY
         generateValue: true
-      - key: RELAY_DATA_DIR
-        value: /data
-    disk:
-      name: relay-data
-      mountPath: /data
-      sizeGB: 1
