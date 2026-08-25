@@ -1,0 +1,7 @@
+server/.env
+server/relay.db
+server/relay.db-journal
+server/__pycache__/
+server/server.log
+**/__pycache__/
+*.pyc

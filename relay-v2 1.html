@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay — release management and approval</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0F1318; --ink2:#333D4A; --mut:#616D7C; --mut2:#8E99A6;
+  --line:#E7EAEE; --line2:#D6DCE3;
+  --paper:#F4F5F7; --card:#FFFFFF; --sunk:#FAFBFC;
+  --go:#0D6E5C; --go-bg:#E7F2EF; --go-ln:#BFDDD5;
+  --wait:#96600A; --wait-bg:#FBF2E1; --wait-ln:#EBD7AE;
+  --stop:#B0271C; --stop-bg:#FCEBE9; --stop-ln:#EFC9C5;
+  --btn:#141A21;
+  --sh:0 1px 2px rgba(15,19,24,.04), 0 2px 6px rgba(15,19,24,.05);
+  --sh2:0 4px 16px rgba(15,19,24,.09);
+  --d:"Inter Tight",system-ui,sans-serif;
+  --b:"Inter",system-ui,sans-serif;
+  --m:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--b);font-size:14px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
+:focus-visible{outline:2px solid var(--go);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
+.mono,.mn{font-family:var(--m);font-variant-numeric:tabular-nums}
+
+/* ── shell ─────────────────────────────── */
+.shell{display:grid;grid-template-columns:238px 1fr;min-height:100vh}
+.rail{background:var(--card);border-right:1px solid var(--line);position:sticky;top:0;height:100vh;
+  overflow-y:auto;padding:20px 0 30px}
+.mark{padding:0 20px 24px;display:flex;align-items:center;gap:8px}
+.mark b{font-family:var(--d);font-size:20px;font-weight:700;letter-spacing:-.035em}
+.mark i{width:6px;height:6px;border-radius:50%;background:var(--go);display:block;margin-top:2px}
+.ngrp{padding:16px 20px 7px;font-size:10.5px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--mut2)}
+.ni{display:flex;align-items:center;gap:9px;margin:1px 10px;padding:8px 11px;border-radius:8px;
+  color:var(--ink2);cursor:pointer;font-size:13.5px;font-weight:450;transition:background .13s}
+.ni:hover{background:var(--sunk)}
+.ni.on{background:var(--go-bg);color:var(--go);font-weight:600}
+.ni .ct{margin-left:auto;font-family:var(--m);font-size:11px;color:var(--mut2)}
+.ni.on .ct{color:var(--go)}
+.ni .dt{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--stop)}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.top{background:rgba(244,245,247,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+  padding:0 34px;height:57px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:20}
+.crumb{font-size:12.5px;color:var(--mut);font-weight:500}
+.top .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
+.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:2px;box-shadow:var(--sh)}
+.seg button{border:0;background:transparent;font-family:var(--b);font-size:12.5px;font-weight:500;
+  padding:5px 12px;border-radius:7px;color:var(--mut);cursor:pointer;transition:all .13s}
+.seg button.on{background:var(--btn);color:#fff}
+.body{padding:34px;flex:1;max-width:1320px;width:100%}
+@media(max-width:920px){
+  .shell{grid-template-columns:1fr}
+  .rail{height:auto;position:static;display:flex;gap:2px;overflow-x:auto;padding:9px;border-right:0;border-bottom:1px solid var(--line)}
+  .mark,.ngrp{display:none}
+  .ni{white-space:nowrap;margin:0}
+  .top{padding:0 18px}.body{padding:20px 18px}
+}
+
+/* ── page head ─────────────────────────── */
+.ph{margin-bottom:28px}
+.ph h1{font-size:30px;font-weight:700;letter-spacing:-.035em;line-height:1.12}
+.ph p{color:var(--mut);font-size:14.5px;margin-top:6px;max-width:64ch}
+.ph .acts{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── stat strip ────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));
+  background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);overflow:hidden}
+.stat{padding:17px 20px 19px;border-right:1px solid var(--line)}
+.stat:last-child{border-right:0}
+.stat .l{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);margin-bottom:9px}
+.stat .n{font-family:var(--d);font-size:33px;font-weight:700;letter-spacing:-.04em;
+  line-height:1;font-variant-numeric:tabular-nums}
+.stat .n.w{color:var(--wait)}.stat .n.s{color:var(--stop)}.stat .n.g{color:var(--go)}
+.stat .h{font-size:12px;color:var(--mut2);margin-top:6px}
+
+/* ── cards ─────────────────────────────── */
+.c{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh)}
+.c>.h{padding:15px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+.c>.h h3{font-size:14.5px;font-weight:600;letter-spacing:-.015em}
+.c>.h .r{margin-left:auto;display:flex;gap:8px;align-items:center}
+.c>.b{padding:20px}
+.c>.b.flush{padding:0}
+.sec{margin-bottom:22px}
+.grid{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;align-items:start}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+@media(max-width:1040px){.grid,.g2{grid-template-columns:1fr}}
+
+/* ── buttons ───────────────────────────── */
+.bt{font-family:var(--b);font-size:13px;font-weight:500;padding:8px 15px;border-radius:8px;
+  border:1px solid var(--line2);background:var(--card);color:var(--ink);cursor:pointer;
+  transition:all .13s;white-space:nowrap;box-shadow:0 1px 1px rgba(15,19,24,.03)}
+.bt:hover{background:var(--sunk);border-color:#C3CBD4}
+.bt.p{background:var(--btn);border-color:var(--btn);color:#fff}
+.bt.p:hover{background:#000}
+.bt.d{color:var(--stop);border-color:var(--stop-ln)}
+.bt.d:hover{background:var(--stop-bg)}
+.bt.s{padding:5px 11px;font-size:12.5px;border-radius:7px}
+.bt:disabled{opacity:.4;cursor:not-allowed}
+.bt:disabled:hover{background:var(--card);border-color:var(--line2)}
+.lk{background:none;border:0;color:var(--mut);font-family:var(--b);font-size:12.5px;font-weight:500;cursor:pointer;padding:0}
+.lk:hover{color:var(--ink);text-decoration:underline}
+
+/* ── status ────────────────────────────── */
+.stt{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;white-space:nowrap}
+.stt i{width:6px;height:6px;border-radius:50%;flex:none}
+.s-none i{background:var(--mut2)} .s-none{color:var(--mut)}
+.s-prog i{background:var(--ink2)} .s-prog{color:var(--ink2)}
+.s-wait i{background:var(--wait)} .s-wait{color:var(--wait)}
+.s-ok   i{background:var(--go)}   .s-ok{color:var(--go)}
+.s-bad  i{background:var(--stop)} .s-bad{color:var(--stop)}
+.tick{display:inline-flex;align-items:center;gap:5px;background:var(--go-bg);color:var(--go);
+  font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
+.tag{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--mut);background:var(--sunk);border:1px solid var(--line);padding:2px 7px;border-radius:5px}
+
+/* ── gate bar — signature ──────────────── */
+.gates{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;min-width:660px}
+.gwrap{overflow-x:auto;padding:4px 0 2px}
+.gt{cursor:default}
+.gt .bar{height:7px;border-radius:4px;background:var(--line);margin-bottom:13px}
+.gt.done .bar{background:var(--go)}
+.gt.now  .bar{background:var(--ink2)}
+.gt.wt   .bar{background:var(--wait-bg);box-shadow:inset 0 0 0 1px var(--wait)}
+.gt.bd   .bar{background:var(--stop)}
+.gt .ix{font-family:var(--m);font-size:10.5px;color:var(--mut2);letter-spacing:.06em}
+.gt .nm{font-family:var(--d);font-size:14px;font-weight:600;letter-spacing:-.015em;margin:3px 0 5px;line-height:1.25}
+.gt.done .nm{color:var(--go)}
+.gt .mk{width:17px;height:17px;border-radius:5px;display:inline-grid;place-items:center;
+  font-size:10px;font-weight:700;color:#fff;background:var(--go);margin-right:5px;vertical-align:-3px}
+.gt.bd .mk{background:var(--stop)}
+
+/* ── sealed approval record ────────────── */
+.appr{border:1px solid var(--line);border-radius:11px;padding:15px 17px;margin-bottom:12px;background:var(--card)}
+.appr:last-child{margin-bottom:0}
+.appr .ah{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.appr .an{font-family:var(--d);font-size:14px;font-weight:600;letter-spacing:-.015em}
+.appr .am{font-size:12.5px;color:var(--mut)}
+.seal{display:flex;align-items:center;gap:11px;background:var(--go-bg);border:1px solid var(--go-ln);
+  border-radius:9px;padding:10px 13px;margin-top:10px}
+.seal.no{background:var(--stop-bg);border-color:var(--stop-ln)}
+.seal .mk{width:22px;height:22px;border-radius:6px;background:var(--go);color:#fff;
+  display:grid;place-items:center;font-size:12px;font-weight:700;flex:none}
+.seal.no .mk{background:var(--stop)}
+.seal .w{font-size:13px;font-weight:600;line-height:1.35}
+.seal .t{font-family:var(--m);font-size:11px;color:var(--mut);letter-spacing:.02em}
+.seal .q{font-size:12.5px;color:var(--ink2);margin-top:2px}
+.pend{display:flex;align-items:center;gap:11px;background:var(--sunk);border:1px dashed var(--line2);
+  border-radius:9px;padding:10px 13px;margin-top:10px}
+.pend .mk{width:22px;height:22px;border-radius:6px;background:var(--card);border:1px solid var(--line2);
+  color:var(--mut);display:grid;place-items:center;font-size:11px;flex:none}
+
+/* ── tables ────────────────────────────── */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--mut2);padding:11px 20px;border-bottom:1px solid var(--line)}
+td{padding:14px 20px;border-bottom:1px solid #F0F2F4;vertical-align:middle;font-size:13.5px}
+tr:last-child td{border-bottom:0}
+tbody tr.k{cursor:pointer;transition:background .11s}
+tbody tr.k:hover{background:var(--sunk)}
+.tw{overflow-x:auto}
+.tt{font-weight:600;font-size:13.5px;letter-spacing:-.008em}
+.rf{font-family:var(--m);font-size:11px;color:var(--mut2);letter-spacing:.03em;margin-top:1px}
+
+/* ── list rows ─────────────────────────── */
+.li{display:flex;gap:14px;padding:14px 20px;border-bottom:1px solid #F0F2F4;align-items:center}
+.li:last-child{border-bottom:0}
+.li .gr{flex:1;min-width:0}
+.li .t{font-size:13.5px;font-weight:600;letter-spacing:-.008em}
+.li .d{font-size:12.5px;color:var(--mut);margin-top:2px}
+.li.hot{background:#FDF6F5}
+.li.hot .t{color:var(--stop)}
+
+/* ── forms ─────────────────────────────── */
+label{display:block;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--mut);margin-bottom:6px}
+input,select,textarea{width:100%;font-family:var(--b);font-size:13.5px;padding:9px 12px;
+  border:1px solid var(--line2);border-radius:8px;background:var(--card);color:var(--ink)}
+textarea{font-family:var(--b);line-height:1.65;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--go);box-shadow:0 0 0 3px var(--go-bg)}
+input::placeholder,textarea::placeholder{color:var(--mut2)}
+.fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
+.er{color:var(--stop);font-size:12.5px;margin-top:6px;display:none;font-weight:500}
+.er.on{display:block}
+
+/* ── modal ─────────────────────────────── */
+.scrim{position:fixed;inset:0;background:rgba(15,19,24,.42);backdrop-filter:blur(3px);
+  display:none;align-items:center;justify-content:center;z-index:60;padding:22px}
+.scrim.on{display:flex}
+.md{background:var(--card);border-radius:16px;width:100%;max-width:580px;max-height:88vh;
+  overflow-y:auto;box-shadow:var(--sh2)}
+.md .h{padding:22px 24px 18px;border-bottom:1px solid var(--line)}
+.md .h h3{font-size:19px;font-weight:700;letter-spacing:-.028em}
+.md .h p{font-size:13px;color:var(--mut);margin-top:5px}
+.md .b{padding:22px 24px}
+.md .f{padding:16px 24px;border-top:1px solid var(--line);display:flex;gap:9px;
+  justify-content:flex-end;background:var(--sunk);border-radius:0 0 16px 16px}
+.prev{background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:15px 17px;
+  font-family:var(--m);font-size:11.5px;line-height:1.85;white-space:pre-wrap;color:var(--ink2);
+  max-height:230px;overflow-y:auto}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;background:var(--sunk);
+  border:1px solid var(--line);padding:5px 11px;border-radius:20px;font-weight:500}
+.chip .e{font-family:var(--m);font-size:11px;color:var(--mut2)}
+.chip.off{opacity:.55}.chip.off .n{text-decoration:line-through}
+
+/* ── misc ──────────────────────────────── */
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(70px);
+  background:var(--btn);color:#fff;font-size:13px;font-weight:500;padding:12px 20px;border-radius:10px;
+  z-index:80;opacity:0;transition:all .24s cubic-bezier(.2,.8,.2,1);pointer-events:none;box-shadow:var(--sh2)}
+.toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+.mt{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--go);border-radius:0 10px 10px 0;
+  padding:13px 17px;font-size:13px;color:var(--ink2)}
+.mt.w{border-left-color:var(--wait)}
+.ept{padding:52px 24px;text-align:center}
+.ept h4{font-family:var(--d);font-size:16px;font-weight:600;margin-bottom:5px}
+.ept p{font-size:13.5px;color:var(--mut);max-width:38ch;margin:0 auto}
+.kv{display:grid;grid-template-columns:118px 1fr;gap:11px 16px;font-size:13.5px;align-items:baseline}
+.kv .k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--mut2)}
+.tl{font-size:13px}
+.tl .e{display:grid;grid-template-columns:118px 1fr;gap:14px;padding:9px 0;border-bottom:1px solid #F2F4F6}
+.tl .e:last-child{border-bottom:0}
+.tl .w{font-family:var(--m);font-size:11px;color:var(--mut2);padding-top:2px;letter-spacing:.02em}
+.tl b{font-weight:600}
+.tl .rs{color:var(--stop);font-size:12.5px;margin-top:2px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid var(--line);border-left:1px solid var(--line)}
+.cal .dh{padding:9px 6px;text-align:center;font-size:10.5px;font-weight:600;color:var(--mut2);
+  text-transform:uppercase;letter-spacing:.08em;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--sunk)}
+.cal .dc{min-height:84px;padding:8px 9px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.cal .dc.o{background:var(--sunk)}
+.cal .dn{font-family:var(--m);font-size:11.5px;color:var(--mut2)}
+.cal .ev{font-size:11.5px;background:var(--go-bg);color:var(--go);border-radius:6px;padding:4px 7px;
+  margin-top:5px;font-weight:600;cursor:pointer;line-height:1.4}
+.cal .ev:hover{background:var(--go);color:#fff}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <nav class="rail" id="rail"></nav>
+  <div class="main">
+    <div class="top">
+      <span class="crumb" id="crumb">Workspace</span>
+      <div class="sp"><div class="seg" id="roles"></div></div>
+    </div>
+    <div class="body" id="view"></div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"><div class="md" id="md"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══ stage model ═══════════════════════ */
+const STAGES=[
+  {k:'groom',nm:'Grooming session',  sm:'Scope agreed',        gate:false},
+  {k:'test', nm:'Testing progress',  sm:'Dev testing',         gate:false},
+  {k:'dev',  nm:'Development env',   sm:'Available in dev',    gate:false},
+  {k:'uat',  nm:'Business approval',   sm:'Business validation', gate:true},
+  {k:'prod', nm:'Production',        sm:'Move to production',  gate:true},
+  {k:'done', nm:'Release completed', sm:'Confirmed live',      gate:false}
+];
+const SI=k=>STAGES.findIndex(s=>s.k===k);
+const SL=k=>(STAGES.find(s=>s.k===k)||{}).nm||k;
+const STATES={notStarted:['Not started','s-none'],inProgress:['In progress','s-prog'],
+  waiting:['Waiting for approval','s-wait'],approved:['Approved','s-ok'],
+  rejected:['Rejected','s-bad'],completed:['Completed','s-ok']};
+
+/* ═══ data (loaded from the server — see boot() below) ═══ */
+let uid=200; const nid=p=>p+(++uid);
+
+let users=[]; const U=id=>users.find(u=>u.id===id)||{nm:'—',em:'—'};
+let comps=[]; const C=id=>comps.find(c=>c.id===id)||{nm:'—',owners:[]};
+let groups=[]; const G=id=>groups.find(g=>g.id===id)||{nm:'—',members:[]};
+const blank=cur=>{const o={};STAGES.forEach((s,i)=>{o[s.k]=i<SI(cur)?'completed':(i===SI(cur)?'inProgress':'notStarted')});return o};
+let rels=[]; const R=id=>rels.find(r=>r.id===id);
+let apps_=[];
+let notifs=[];
+let acts=[];
+let audit=[];
+let tmpl=[];
+
+/* ═══ server sync ═══════════════════════ */
+let KEY=localStorage.getItem('relayKey')||'';
+let emailConfigured=false,emailFrom=null;
+function authHeaders(extra){return Object.assign({'X-Access-Key':KEY},extra||{})}
+async function sendEmail(to,subject,body){
+  if(!to||!to.length)return false;
+  try{
+    const res=await fetch('/api/send-email',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),
+      body:JSON.stringify({to,subject,body})});
+    if(!res.ok){const e=await res.json().catch(()=>({}));toast(`Email not sent: ${e.detail||res.status}`);return false}
+    return true;
+  }catch(e){toast('Email not sent — check connection');return false}
+}
+function fillTmpl(ev,vars){
+  const t=tmpl.find(x=>x.ev===ev);if(!t)return null;
+  const rep=s=>Object.keys(vars).reduce((acc,k)=>acc.split('{'+k+'}').join(vars[k]??''),s);
+  return{subject:rep(t.sub),body:rep(t.bd)};
+}
+async function checkEmailStatus(){
+  try{const r=await fetch('/api/email-status',{headers:authHeaders()});
+    if(r.ok){const j=await r.json();emailConfigured=j.configured;emailFrom=j.from}}
+  catch(e){}
+}
+function applyState(s){
+  users=s.users;comps=s.comps;groups=s.groups;rels=s.rels;apps_=s.apps_;
+  notifs=s.notifs;acts=s.acts;audit=s.audit;tmpl=s.tmpl;uid=Math.max(uid,s.uid||0);
+}
+function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl}}
+async function persist(){
+  try{
+    const res=await fetch('/api/state',{method:'PUT',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(snapshot())});
+    if(res.status===401){localStorage.removeItem('relayKey');KEY='';toast('Access key rejected — reloading');setTimeout(()=>location.reload(),900)}
+  }catch(e){toast('Could not save — check your connection')}
+}
+function isEditing(){
+  const el=document.activeElement;
+  return!!el&&['INPUT','TEXTAREA','SELECT'].includes(el.tagName);
+}
+function showGate(msg){
+  document.getElementById('rail').innerHTML='';
+  document.getElementById('crumb').textContent='Sign in';
+  document.getElementById('view').innerHTML=`
+    <div style="max-width:360px;margin:90px auto" class="c"><div class="b">
+      <h3 style="margin-bottom:6px;font-family:var(--d);font-size:19px;font-weight:700">Relay access key</h3>
+      <p style="color:var(--mut);font-size:13px;margin-bottom:16px">${msg||'Enter the workspace access key to continue.'}</p>
+      <input id="gk" type="password" placeholder="Access key" style="margin-bottom:12px">
+      <button class="bt p" style="width:100%" onclick="submitKey()">Continue</button>
+    </div></div>`;
+  const gk=document.getElementById('gk');
+  gk.focus();
+  gk.addEventListener('keydown',e=>{if(e.key==='Enter')submitKey()});
+}
+function submitKey(){
+  const v=document.getElementById('gk').value.trim();
+  if(!v)return;
+  KEY=v;localStorage.setItem('relayKey',KEY);boot();
+}
+async function boot(){
+  if(!KEY){showGate();return}
+  let res;
+  try{res=await fetch('/api/state',{headers:authHeaders()})}
+  catch(e){document.getElementById('view').innerHTML='<div class="ept"><h4>Cannot reach the server</h4><p>Check that the Relay backend is running.</p></div>';return}
+  if(res.status===401){localStorage.removeItem('relayKey');KEY='';showGate('That key was not accepted. Try again.');return}
+  applyState(await res.json());
+  checkEmailStatus();
+  draw();
+  setInterval(async()=>{
+    if(isEditing()||document.getElementById('scrim').classList.contains('on'))return;
+    try{const r=await fetch('/api/state',{headers:authHeaders()});if(r.ok){applyState(await r.json());draw()}}
+    catch(e){}
+  },6000);
+}
+
+/* ═══ state ═════════════════════════════ */
+let me='U1', view='dash', openRel=null, calMonth=new Date(2026,8,1);
+let flt={q:'',comp:'all',stage:'all',owner:'all',st:'all'};
+
+const ROLE=()=>U(me).role;
+const canEdit=()=>['Admin','Release Management'].includes(ROLE());
+const isAdmin=()=>ROLE()==='Admin';
+
+/* ═══ helpers ═══════════════════════════ */
+const E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const P2=n=>String(n).padStart(2,'0');
+function fdt(s){if(!s)return '—';const d=new Date(s);return `${P2(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}, ${P2(d.getHours())}:${P2(d.getMinutes())}`}
+function fd(s){if(!s)return '—';const d=new Date(s);return `${P2(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}`}
+const now=()=>new Date().toISOString().slice(0,16);
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');
+  clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('on'),2700)}
+function stt(st){const[l,c]=STATES[st]||['—','s-none'];return `<span class="stt ${c}"><i></i>${l}</span>`}
+function logAudit(act,rel,prev,next,rs,comp){audit.unshift({on:now(),ac:me,act,rel:rel||null,comp:comp||null,prev:prev||'—',next:next||'—',rs:rs||''})}
+function send(ty,sub,to,body){
+  notifs.unshift({id:nid('N'),ty,sub,to,on:now(),ok:true});
+  sendEmail(to.map(id=>U(id).em).filter(e=>e&&e.includes('@')),sub,body||sub);
+}
+
+const openApp=(rid,stage)=>apps_.find(a=>a.rel===rid&&a.stage===stage&&a.status==='open');
+const appsFor=rid=>apps_.filter(a=>a.rel===rid).sort((a,b)=>b.on.localeCompare(a.on));
+const stageState=(r,k)=>r.st[k]||'notStarted';
+const grpFor=(r,stage)=>groups.find(g=>g.stage===stage&&g.members.some(m=>C(r.comp).owners.includes(m)))||groups.find(g=>g.stage===stage);
+function lastDec(rid,stage){const a=apps_.find(x=>x.rel===rid&&x.stage===stage&&x.status==='approved');
+  return a&&a.dec.length?a.dec[a.dec.length-1]:null}
+
+function canAdvance(r){
+  const i=SI(r.cur);
+  if(i>=STAGES.length-1)return[false,'This release is already complete.'];
+  const nx=STAGES[i+1],cs=stageState(r,r.cur);
+  if(cs==='waiting')return[false,'An approval request is open on this stage.'];
+  if(cs==='rejected')return[false,'This stage was rejected. Raise a new approval or return the release.'];
+  if(nx.k==='uat'&&stageState(r,'dev')!=='completed'&&r.cur!=='dev')return[false,'Development environment must be completed first.'];
+  if(nx.k==='prod'&&stageState(r,'uat')!=='approved')return[false,'UAT approval must be recorded before Production.'];
+  if(nx.k==='done'&&stageState(r,'prod')!=='approved')return[false,'Production approval must be recorded before completion.'];
+  if(STAGES[i].gate&&cs!=='approved')return[false,`${SL(r.cur)} approval must be recorded first.`];
+  return[true,''];
+}
+function canRequest(r,stage){
+  if(!STAGES.find(s=>s.k===stage)?.gate)return[false,''];
+  if(openApp(r.id,stage))return[false,'An approval request is already open.'];
+  if(stageState(r,stage)==='approved')return[false,'Already approved.'];
+  if(stage==='prod'&&!r.plan)return[false,'Set a planned production release date before requesting approval.'];
+  if(stage==='prod'&&stageState(r,'uat')!=='approved')return[false,'UAT approval is required first.'];
+  return[true,''];
+}
+
+/* ═══ nav ═══════════════════════════════ */
+function pendingForMe(){
+  const out=[];
+  if(canEdit())rels.forEach(r=>{
+    if(r.owner!==me&&!isAdmin())return;
+    const a=openApp(r.id,r.cur);
+    if(a)out.push({k:'await',r,a});
+    else{const[ok]=canAdvance(r);if(ok&&r.cur!=='done')out.push({k:'move',r})}
+  });
+  acts.forEach(v=>{if(C(v.comp).owners.includes(me)&&v.by!==me&&!v.ack.includes(me))out.push({k:'ack',v})});
+  return out;
+}
+const unackCount=()=>acts.filter(v=>C(v.comp).owners.includes(me)&&v.by!==me&&!v.ack.includes(me)).length;
+
+const NAV=[
+ {g:'Overview',items:[
+   {k:'dash',l:'Dashboard',ic:'🏠'},
+   {k:'mine',l:'My pending actions',ic:'⏳',ct:()=>pendingForMe().length,alert:1},
+   {k:'rels',l:'Releases',ic:'📦',ct:()=>rels.filter(r=>r.cur!=='done').length},
+   {k:'cal', l:'Release calendar',ic:'📅'}]},
+ {g:'Messages',items:[
+   {k:'chg', l:'Change activity',ic:'🔔',ct:unackCount,alert:1},
+   {k:'mail',l:'Compose email',ic:'✉️'},
+   {k:'note',l:'Notification history',ic:'📨'},
+   {k:'aud', l:'Audit trail',ic:'📋'}]},
+ {g:'Settings',admin:1,items:[
+   {k:'usr',l:'Users and email',ic:'👤'},{k:'grp',l:'Approval groups',ic:'✅'},
+   {k:'cmp',l:'Components',ic:'🧩'},{k:'tpl',l:'Email templates',ic:'📝'}]}
+];
+function drawNav(){
+  let h=`<div class="mark"><b>Relay</b><i></i></div>`;
+  NAV.forEach(g=>{
+    if(g.admin&&!isAdmin())return;
+    h+=`<div class="ngrp">${g.g}</div>`;
+    g.items.forEach(it=>{
+      const n=it.ct?it.ct():0;
+      h+=`<div class="ni ${view===it.k?'on':''}" onclick="go('${it.k}')"><span style="margin-right:2px">${it.ic||''}</span><span>${it.l}</span>
+        ${n?(it.alert?`<span class="dt"></span>`:`<span class="ct">${n}</span>`):''}</div>`;
+    });
+  });
+  document.getElementById('rail').innerHTML=h;
+  document.getElementById('roles').innerHTML=['U1','U2','U3'].map(u=>{
+    const r=U(u).role;
+    return `<button class="${me===u?'on':''}" onclick="setMe('${u}')">${r==='Admin'?'Admin':r==='Release Management'?'Release mgmt':'Approver'}</button>`
+  }).join('');
+}
+function setMe(u){me=u;if(!isAdmin()&&['usr','grp','cmp','tpl'].includes(view))view='dash';draw()}
+function go(k){view=k;openRel=null;draw();window.scrollTo(0,0)}
+function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
+
+/* ═══ router ════════════════════════════ */
+const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'],
+ mine:['My pending actions','Only the items waiting on you.'],
+ rels:['Releases','Every release being tracked, with its current gate.'],
+ rel:['Release detail',''],cal:['Release calendar','Planned production releases by date.'],
+ chg:['Change activity','Who pulled or applied changes, and who was told.'],
+ mail:['Compose email','Send a one-off message to any address, right now.'],
+ note:['Notification history','Every message the application has sent.'],
+ aud:['Audit trail','Append-only record of every action taken.'],
+ usr:['Users and email','The single source for every recipient list.'],
+ grp:['Approval groups','Who signs each gate, and what counts as approved.'],
+ cmp:['Components','Ownership drives who gets change alerts.'],
+ tpl:['Email templates','Wording for every message the application sends.']};
+
+function draw(){
+  drawNav();
+  document.getElementById('crumb').textContent=
+    (NAV.find(g=>g.items.some(i=>i.k===view))||{g:'Overview'}).g;
+  const v=document.getElementById('view');
+  if(!canEdit()&&view!=='rel'){v.innerHTML=vRO();return}
+  v.innerHTML=({dash:vDash,mine:vMine,rels:vRels,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
+    aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
+}
+const head=(k,extra='')=>{const[t,d]=TITLES[k];
+  return `<div class="ph"><h1>${t}</h1>${d?`<p>${d}</p>`:''}${extra?`<div class="acts">${extra}</div>`:''}</div>`};
+
+function vRO(){
+  return `<div class="ph"><h1>Approver access</h1>
+    <p>Approvers record decisions through the secure single-use link emailed to them, so the workspace itself stays limited to Admin and Release Management. Switch role above to keep exploring.</p></div>
+  <div class="c"><div class="b"><div class="kv">
+    <div class="k">Signed in</div><div>${E(U(me).nm)}</div>
+    <div class="k">Email</div><div class="mono" style="font-size:12.5px">${E(U(me).em)}</div>
+    <div class="k">Role</div><div>${E(U(me).role)}</div>
+    <div class="k">Responsibility</div><div>${E(U(me).resp)}</div>
+  </div></div></div>`;
+}
+
+/* ═══ help card ═════════════════════════ */
+function helpCard(){
+  if(localStorage.getItem('relayHelpDismissed'))return'';
+  return`<div class="sec"><div class="c" style="border-left:3px solid var(--go)"><div class="b">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start">
+      <div>
+        <div style="font-family:var(--d);font-weight:700;font-size:15px;margin-bottom:6px">What is this page?</div>
+        <div style="color:var(--ink2);font-size:13.5px;line-height:1.7">
+          Relay tracks each change (a "release") as it moves through steps: Grooming → Testing → Dev →
+          <b>Business approval</b> → <b>Production</b> → Done. The two bold steps need someone to click Approve
+          before the release can continue. The left menu: <b>Overview</b> is your day-to-day work,
+          <b>Messages</b> is everything sent or logged, <b>Settings</b> is who's who and how approvals are set up.
+        </div>
+      </div>
+      <button class="bt s" onclick="dismissHelp()" style="flex:none">Got it</button>
+    </div>
+  </div></div></div>`;
+}
+function dismissHelp(){localStorage.setItem('relayHelpDismissed','1');draw()}
+
+/* ═══ dashboard ═════════════════════════ */
+function vDash(){
+  const inprog=rels.filter(r=>r.cur!=='done').length;
+  const waiting=apps_.filter(a=>a.status==='open').length;
+  const uatP=apps_.filter(a=>a.status==='open'&&a.stage==='uat').length;
+  const prodP=apps_.filter(a=>a.status==='open'&&a.stage==='prod').length;
+  const att=[];
+  apps_.filter(a=>a.status==='open'&&a.esc).forEach(a=>att.push([`Approval overdue — ${R(a.rel).ref}`,`${SL(a.stage)} has passed the escalation threshold`,a.rel]));
+  rels.filter(r=>stageState(r,r.cur)==='rejected').forEach(r=>att.push([`Rejected at ${SL(r.cur)} — ${r.ref}`,E(r.nm),r.id]));
+  acts.filter(v=>C(v.comp).owners.includes(me)&&v.by!==me&&!v.ack.includes(me))
+      .forEach(v=>att.push([`${U(v.by).nm} pulled changes on ${C(v.comp).nm}`,'Take the latest before continuing',null]));
+  const up=rels.filter(r=>r.plan&&r.cur!=='done').sort((a,b)=>a.plan.localeCompare(b.plan)).slice(0,5);
+  const done=rels.filter(r=>r.cur==='done').slice(0,4);
+
+  return head('dash')+helpCard()+`
+  <div class="sec"><div class="stats">
+    <div class="stat"><div class="l">In progress</div><div class="n">${inprog}</div><div class="h">across ${comps.length} components</div></div>
+    <div class="stat"><div class="l">Awaiting approval</div><div class="n ${waiting?'w':''}">${waiting}</div><div class="h">requests open</div></div>
+    <div class="stat"><div class="l">Business approval pending</div><div class="n">${uatP}</div><div class="h">waiting on the business</div></div>
+    <div class="stat"><div class="l">Production pending</div><div class="n">${prodP}</div><div class="h">awaiting go-live decision</div></div>
+    <div class="stat"><div class="l">Needs attention</div><div class="n ${att.length?'s':'g'}">${att.length}</div><div class="h">${att.length?'flagged now':'all clear'}</div></div>
+  </div></div>
+
+  ${att.length?`<div class="sec"><div class="c"><div class="h"><h3>Immediate attention</h3>
+    <div class="r"><span class="tag">${att.length} item${att.length!==1?'s':''}</span></div></div><div class="b flush">
+    ${att.map(a=>`<div class="li hot"><div class="gr"><div class="t">${a[0]}</div><div class="d">${a[1]}</div></div>
+      ${a[2]?`<button class="bt s" onclick="openR('${a[2]}')">Open</button>`:''}</div>`).join('')}
+  </div></div></div>`:''}
+
+  <div class="sec grid">
+    <div class="c"><div class="h"><h3>Releases in progress</h3>
+      <div class="r"><button class="lk" onclick="go('rels')">View all →</button></div></div>
+      <div class="b flush"><div class="tw"><table>
+      <thead><tr><th>Release</th><th>Component</th><th>Gate</th><th>State</th><th>Planned</th></tr></thead><tbody>
+      ${rels.filter(r=>r.cur!=='done').map(r=>`<tr class="k" onclick="openR('${r.id}')">
+        <td><div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div></td>
+        <td>${E(C(r.comp).nm)}</td><td>${E(SL(r.cur))}</td><td>${stt(stageState(r,r.cur))}</td>
+        <td class="mono" style="font-size:12px">${fd(r.plan)}</td></tr>`).join('')}
+      </tbody></table></div></div></div>
+
+    <div>
+      <div class="c sec"><div class="h"><h3>Upcoming production</h3></div><div class="b flush">
+        ${up.length?up.map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.nm)}</div>
+          <div class="d">${r.ref} · ${E(C(r.comp).nm)}</div></div>
+          <div class="mono" style="font-size:11.5px;color:var(--mut);white-space:nowrap">${fd(r.plan)}</div></div>`).join('')
+        :'<div class="ept"><p>No dates planned yet.</p></div>'}
+      </div></div>
+      <div class="c"><div class="h"><h3>Recent messages</h3>
+        <div class="r"><button class="lk" onclick="go('note')">All →</button></div></div><div class="b flush">
+        ${notifs.slice(0,4).map(n=>`<div class="li"><div class="gr"><div class="t">${E(n.sub)}</div>
+          <div class="d">${n.ty} · ${n.to.length} recipient${n.to.length!==1?'s':''} · ${fdt(n.on)}</div></div></div>`).join('')}
+      </div></div>
+    </div>
+  </div>
+
+  ${done.length?`<div class="c"><div class="h"><h3>Recently completed</h3></div><div class="b flush">
+    ${done.map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.nm)}</div>
+      <div class="d">${r.ref} · released ${fd(r.actual)}</div></div>
+      <span class="tick">✓ Live</span></div>`).join('')}
+  </div></div>`:''}`;
+}
+
+/* ═══ my pending ════════════════════════ */
+function vMine(){
+  const p=pendingForMe();
+  if(!p.length)return head('mine')+`<div class="c"><div class="ept">
+    <h4>Nothing waiting on you</h4><p>Approvals you have requested and change alerts on your components will appear here.</p></div></div>`;
+  return head('mine')+`<div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
+  ${p.map(x=>{
+    if(x.k==='await'){const pend=G(x.a.grp).members.filter(m=>!x.a.dec.some(d=>d.u===m));
+      return `<div class="li"><div class="gr"><div class="t">Awaiting approval — ${E(x.r.nm)}</div>
+      <div class="d">${x.r.ref} · ${SL(x.a.stage)} · requested ${fdt(x.a.on)}<br>Yet to respond: ${pend.map(m=>E(U(m).nm)).join(', ')||'none'}</div></div>
+      <button class="bt s" onclick="openR('${x.r.id}')">Open</button></div>`}
+    if(x.k==='move')return `<div class="li"><div class="gr"><div class="t">Ready to move on — ${E(x.r.nm)}</div>
+      <div class="d">${x.r.ref} · currently ${SL(x.r.cur)}</div></div>
+      <button class="bt s p" onclick="openR('${x.r.id}')">Open</button></div>`;
+    return `<div class="li hot"><div class="gr"><div class="t">${E(U(x.v.by).nm)} pulled changes on ${E(C(x.v.comp).nm)}</div>
+      <div class="d">${fdt(x.v.on)} — take the latest before continuing</div></div>
+      <button class="bt s" onclick="ack('${x.v.id}')">Acknowledge</button></div>`;
+  }).join('')}</div></div>`;
+}
+
+/* ═══ releases ══════════════════════════ */
+function setF(k,v){flt[k]=v;draw()}
+function vRels(){
+  const rows=rels.filter(r=>{
+    if(flt.comp!=='all'&&r.comp!==flt.comp)return false;
+    if(flt.stage!=='all'&&r.cur!==flt.stage)return false;
+    if(flt.owner!=='all'&&r.owner!==flt.owner)return false;
+    if(flt.st!=='all'&&stageState(r,r.cur)!==flt.st)return false;
+    if(flt.q){const q=flt.q.toLowerCase();
+      if(!(r.nm.toLowerCase().includes(q)||r.ref.toLowerCase().includes(q)||r.desc.toLowerCase().includes(q)))return false}
+    return true;
+  });
+  return head('rels',`<button class="bt p" onclick="mNew()">New release</button>
+    <button class="bt" onclick="exportCsv()">Export history</button>`)+`
+  <div class="sec c"><div class="b">
+    <div class="fg">
+      <div><label>Search</label><input value="${E(flt.q)}" placeholder="Name, reference or description"
+        oninput="flt.q=this.value;clearTimeout(window._t);window._t=setTimeout(draw,220)"></div>
+      <div><label>Component</label><select onchange="setF('comp',this.value)"><option value="all">All components</option>
+        ${comps.map(c=>`<option value="${c.id}" ${flt.comp===c.id?'selected':''}>${E(c.nm)}</option>`).join('')}</select></div>
+      <div><label>Gate</label><select onchange="setF('stage',this.value)"><option value="all">All gates</option>
+        ${STAGES.map(s=>`<option value="${s.k}" ${flt.stage===s.k?'selected':''}>${s.nm}</option>`).join('')}</select></div>
+      <div><label>Owner</label><select onchange="setF('owner',this.value)"><option value="all">All owners</option>
+        ${users.filter(u=>u.role==='Release Management').map(u=>`<option value="${u.id}" ${flt.owner===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
+      <div><label>State</label><select onchange="setF('st',this.value)"><option value="all">Any state</option>
+        ${Object.keys(STATES).map(k=>`<option value="${k}" ${flt.st===k?'selected':''}>${STATES[k][0]}</option>`).join('')}</select></div>
+    </div>
+  </div></div>
+
+  <div class="c"><div class="b flush">${rows.length?`<div class="tw"><table>
+    <thead><tr><th>Release</th><th>Component</th><th>Owner</th><th>Stage</th><th>State</th><th>Business</th><th>Production</th><th>Planned</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr class="k" onclick="openR('${r.id}')">
+      <td><div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div></td>
+      <td>${E(C(r.comp).nm)}</td><td>${E(U(r.owner).nm)}</td><td>${E(SL(r.cur))}</td>
+      <td>${stt(stageState(r,r.cur))}</td>
+      <td>${stageState(r,'uat')==='approved'?'<span class="tick">✓</span>':'<span style="color:var(--mut2)">—</span>'}</td>
+      <td>${stageState(r,'prod')==='approved'?'<span class="tick">✓</span>':'<span style="color:var(--mut2)">—</span>'}</td>
+      <td class="mono" style="font-size:12px">${fd(r.plan)}</td></tr>`).join('')}</tbody></table></div>
+    <div style="padding:13px 20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mut)">
+      Showing ${rows.length} of ${rels.length} releases</div>`
+    :'<div class="ept"><h4>No releases match</h4><p>Adjust the filters above, or create a new release to get started.</p></div>'}
+  </div></div>`;
+}
+
+/* ═══ release detail ════════════════════ */
+function vRel(){
+  const r=R(openRel);if(!r)return vRels();
+  const ci=SI(r.cur),gate=STAGES[ci].gate;
+  const[advOk,advWhy]=canAdvance(r);
+  const[reqOk,reqWhy]=gate?canRequest(r,r.cur):[false,''];
+  const oa=openApp(r.id,r.cur);
+  const acts_=canEdit()?`
+    ${gate&&!oa?`<button class="bt p" ${reqOk?'':'disabled'} onclick="mApprove('${r.id}','${r.cur}')">Send for ${r.cur==='uat'?'business':'production'} approval</button>`:''}
+    ${advOk?`<button class="bt ${gate?'':'p'}" onclick="advance('${r.id}')">Move to ${SL(STAGES[ci+1].k)}</button>`:''}
+    ${ci>0?`<button class="bt d" onclick="mReturn('${r.id}')">Return to earlier gate</button>`:''}`:'';
+
+  const rail=`<div class="c sec"><div class="h"><h3>Gate progress</h3>
+    <div class="r">${stt(stageState(r,r.cur))}</div></div><div class="b">
+    <div class="gwrap"><div class="gates">
+    ${STAGES.map((s,i)=>{
+      const st=stageState(r,s.k);let cls='',mk='';
+      if(st==='completed'||st==='approved'){cls='done';mk='<span class="mk">✓</span>'}
+      else if(st==='rejected'){cls='bd';mk='<span class="mk">✕</span>'}
+      else if(st==='waiting'){cls='wt'}
+      else if(i===ci){cls='now'}
+      else if(i<ci){cls='done';mk='<span class="mk">✓</span>'}
+      const d=s.gate?lastDec(r.id,s.k):null;
+      return `<div class="gt ${cls}"><div class="bar"></div>
+        <div class="ix">GATE ${P2(i+1)}</div>
+        <div class="nm">${mk}${s.nm}</div>
+        <div class="stt ${(STATES[st]||[])[1]}" style="font-size:11.5px"><i></i>${STATES[st][0]}</div>
+        ${d?`<div class="mono" style="font-size:10.5px;color:var(--mut2);margin-top:5px">${fdt(d.on)}</div>`:''}
+      </div>`;
+    }).join('')}
+    </div></div>
+  </div></div>`;
+
+  const apl=appsFor(r.id);
+
+  return `<div class="ph">
+    <button class="lk" style="margin-bottom:12px" onclick="go('rels')">← All releases</button>
+    <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()}</div>
+    <h1>${E(r.nm)}</h1><p>${E(r.desc)}</p>
+    ${acts_?`<div class="acts">${acts_}</div>`:''}
+  </div>
+
+  ${(advWhy&&canEdit()&&r.cur!=='done')?`<div class="sec"><div class="mt w">${E(advWhy)}</div></div>`:''}
+  ${(gate&&reqWhy&&!oa&&canEdit())?`<div class="sec"><div class="mt w">${E(reqWhy)}</div></div>`:''}
+
+  ${rail}
+
+  <div class="grid">
+    <div>
+      <div class="c sec"><div class="h"><h3>Approval record</h3>
+        <div class="r"><span class="tag">${apl.length} entr${apl.length!==1?'ies':'y'}</span></div></div><div class="b">
+        ${apl.length?apl.map(a=>{
+          const g=G(a.grp),pend=g.members.filter(m=>!a.dec.some(d=>d.u===m));
+          return `<div class="appr"><div class="ah">
+            <span class="an">${SL(a.stage)}</span>
+            ${a.status==='approved'?'<span class="tick">✓ Approved</span>':
+              a.status==='rejected'?'<span class="stt s-bad"><i></i>Rejected</span>':
+              '<span class="stt s-wait"><i></i>Waiting</span>'}
+            ${a.esc?'<span class="tag" style="color:var(--stop);border-color:var(--stop-ln);background:var(--stop-bg)">Escalated</span>':''}
+          </div>
+          <div class="am">${E(g.nm)} · ${a.cond==='any'?'any one approver':'every approver'} · requested by ${E(U(a.by).nm)}, ${fdt(a.on)}</div>
+          ${a.dec.map(d=>`<div class="seal ${d.d==='rejected'?'no':''}">
+            <span class="mk">${d.d==='rejected'?'✕':'✓'}</span>
+            <div><div class="w">${E(U(d.u).nm)}</div>
+              <div class="t">${d.d==='rejected'?'Rejected':'Approved'} · ${fdt(d.on)}</div>
+              ${d.c?`<div class="q">“${E(d.c)}”</div>`:''}</div></div>`).join('')}
+          ${a.status==='open'&&pend.length?pend.map(m=>`<div class="pend">
+            <span class="mk">◷</span><div><div class="w">${E(U(m).nm)}</div>
+            <div class="t">Awaiting decision · ${E(U(m).em)}</div></div></div>`).join(''):''}
+          </div>`;
+        }).join(''):'<div class="ept"><p>No approval has been requested for this release yet.</p></div>'}
+      </div></div>
+
+      ${oa?`<div class="c sec"><div class="h"><h3>Record a decision</h3></div><div class="b">
+        <div class="mt" style="margin-bottom:16px">Approvers normally decide through the secure link emailed to them. These controls stand in for that link so the workflow can be walked through here.</div>
+        ${G(oa.grp).members.filter(m=>!oa.dec.some(d=>d.u===m)).map(m=>`
+          <div class="li" style="border:1px solid var(--line);border-radius:10px;margin-bottom:9px;padding:12px 14px">
+            <div class="gr"><div class="t">${E(U(m).nm)}</div>
+              <div class="d mono" style="font-size:11.5px">${E(U(m).em)}</div></div>
+            <button class="bt s p" onclick="decide('${oa.id}','${m}','approved')">Approve</button>
+            <button class="bt s d" onclick="mReject('${oa.id}','${m}')">Reject</button>
+          </div>`).join('')||'<p style="color:var(--mut);font-size:13.5px">Every approver has responded.</p>'}
+      </div></div>`:''}
+
+      <div class="c"><div class="h"><h3>Notes</h3></div><div class="b">
+        ${r.cmts.length?r.cmts.map(c=>`<div style="padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid #F0F2F4">
+          <div style="font-size:13px"><b style="font-weight:600">${E(U(c.by).nm)}</b>
+            <span class="mono" style="font-size:11px;color:var(--mut2);margin-left:7px">${fdt(c.on)}</span></div>
+          <div style="margin-top:4px;color:var(--ink2)">${E(c.tx)}</div></div>`).join('')
+        :'<p style="color:var(--mut);font-size:13.5px;margin-bottom:14px">No notes on this release yet.</p>'}
+        ${canEdit()?`<label>Add a note</label><textarea id="cmt" rows="2" placeholder="Visible to Admin and Release Management"></textarea>
+        <button class="bt s" style="margin-top:10px" onclick="addCmt('${r.id}')">Add note</button>`:''}
+      </div></div>
+    </div>
+
+    <div>
+      <div class="c sec"><div class="h"><h3>Release information</h3></div><div class="b">
+        <div class="kv">
+          <div class="k">Reference</div><div class="mono" style="font-size:12.5px">${r.ref}</div>
+          <div class="k">Component</div><div>${E(C(r.comp).nm)}</div>
+          <div class="k">Owner</div><div>${E(U(r.owner).nm)}</div>
+          <div class="k">Current stage</div><div>${E(SL(r.cur))}</div>
+          <div class="k">Business</div><div>${(()=>{const d=lastDec(r.id,'uat');
+            return d?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:11px;color:var(--mut2);margin-top:3px">${fdt(d.on)} · ${E(U(d.u).nm)}</div>`
+            :'<span style="color:var(--mut)">Not approved</span>'})()}</div>
+          <div class="k">Production</div><div>${(()=>{const d=lastDec(r.id,'prod');
+            return d?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:11px;color:var(--mut2);margin-top:3px">${fdt(d.on)} · ${E(U(d.u).nm)}</div>`
+            :'<span style="color:var(--mut)">Not approved</span>'})()}</div>
+          <div class="k">Planned</div><div class="mono" style="font-size:12.5px">${fd(r.plan)}</div>
+          <div class="k">Actual</div><div class="mono" style="font-size:12.5px">${fd(r.actual)}</div>
+          <div class="k">Attachments</div><div>${r.atts.length?r.atts.map(a=>`<div class="mono" style="font-size:12px">${E(a)}</div>`).join(''):'<span style="color:var(--mut)">None</span>'}</div>
+        </div>
+        ${canEdit()?`<div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="bt s" onclick="mDate('${r.id}')">Set planned date</button>
+          <button class="bt s" onclick="mAtt('${r.id}')">Add attachment</button></div>`:''}
+      </div></div>
+
+      <div class="c"><div class="h"><h3>History</h3></div><div class="b">
+        <div class="tl">${audit.filter(a=>a.rel===r.id).map(a=>`<div class="e">
+          <div class="w">${fdt(a.on)}</div>
+          <div><b>${E(U(a.ac).nm)}</b> — ${E(a.act)}
+            ${a.prev!=='—'?`<div style="color:var(--mut);font-size:12.5px">${E(a.prev)} → ${E(a.next)}</div>`:''}
+            ${a.rs?`<div class="rs">Reason: ${E(a.rs)}</div>`:''}</div></div>`).join('')
+          ||'<p style="color:var(--mut);font-size:13.5px">No events recorded.</p>'}</div>
+      </div></div>
+    </div>
+  </div>`;
+}
+
+/* ═══ calendar ══════════════════════════ */
+function vCal(){
+  const y=calMonth.getFullYear(),m=calMonth.getMonth();
+  const start=(new Date(y,m,1).getDay()+6)%7,days=new Date(y,m+1,0).getDate();
+  const cells=[];for(let i=0;i<start;i++)cells.push(null);
+  for(let d=1;d<=days;d++)cells.push(d);while(cells.length%7)cells.push(null);
+  const key=d=>`${y}-${P2(m+1)}-${P2(d)}`;
+  const MF=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return head('cal')+`<div class="c"><div class="h"><h3>${MF[m]} ${y}</h3>
+    <div class="r"><button class="bt s" onclick="calMonth=new Date(${y},${m-1},1);draw()">←</button>
+    <button class="bt s" onclick="calMonth=new Date(${y},${m+1},1);draw()">→</button></div></div>
+    <div class="b flush"><div class="cal">
+      ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="dh">${d}</div>`).join('')}
+      ${cells.map(d=>{
+        if(!d)return `<div class="dc o"></div>`;
+        const evs=rels.filter(r=>r.plan===key(d));
+        return `<div class="dc"><div class="dn">${P2(d)}</div>
+          ${evs.map(r=>`<div class="ev" onclick="openR('${r.id}')">${r.ref}<br>${E(C(r.comp).nm)}</div>`).join('')}</div>`;
+      }).join('')}
+    </div></div></div>`;
+}
+
+/* ═══ change activity ═══════════════════ */
+function vChg(){
+  return head('chg',canEdit()?`<button class="bt p" onclick="mPull()">Record a pull</button>`:'')+`
+  <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
+  <div class="c"><div class="b flush">
+    ${acts.map(v=>{
+      const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
+      const hot=others.includes(me)&&!v.ack.includes(me);
+      return `<div class="li ${hot?'hot':''}"><div class="gr">
+        <div class="t">${E(U(v.by).nm)} — ${E(v.act.toLowerCase())} on ${E(C(v.comp).nm)}</div>
+        <div class="d">${fdt(v.on)} · notified ${others.length} owner${others.length!==1?'s':''}: ${others.map(o=>E(U(o).nm)).join(', ')||'none'}</div>
+        <div class="d">Acknowledged by ${v.ack.length?v.ack.map(o=>E(U(o).nm)).join(', '):'no one yet'}</div>
+      </div>${hot?`<button class="bt s" onclick="ack('${v.id}')">Acknowledge</button>`:''}</div>`;
+    }).join('')}
+  </div></div>`;
+}
+
+/* ═══ compose email ═════════════════════ */
+function vMail(){
+  return head('mail')+`
+  ${!emailConfigured?`<div class="sec"><div class="mt w">Email sending is not configured on the server yet. Set <b>RELAY_SMTP_USER</b> (a Gmail address) and <b>RELAY_SMTP_PASS</b> (its Gmail App Password) as environment variables on the server, then restart it.</div></div>`
+    :`<div class="sec"><div class="mt">Sending as ${E(emailFrom)}.</div></div>`}
+  <div class="c"><div class="b">
+    <div class="fg" style="margin-bottom:16px">
+      <div><label>To</label><input id="mt" placeholder="name@gmail.com, other@gmail.com"></div>
+      <div><label>Or pick a user</label><select id="mtu" onchange="if(this.value)document.getElementById('mt').value=U(this.value).em">
+        <option value="">— choose —</option>
+        ${users.map(u=>`<option value="${u.id}">${E(u.nm)} (${E(u.em)})</option>`).join('')}
+      </select></div>
+    </div>
+    <div style="margin-bottom:16px"><label>Subject</label><input id="ms" placeholder="Subject"></div>
+    <div style="margin-bottom:8px"><label>Message</label><textarea id="mb" rows="8" placeholder="Type your message"></textarea></div>
+    <div class="er" id="e-mail">Enter at least one recipient, a subject and a message.</div>
+    <button class="bt p" id="mSend" style="margin-top:8px" ${emailConfigured?'':'disabled'} onclick="sendManual()">Send email</button>
+  </div></div>`;
+}
+async function sendManual(){
+  const to=document.getElementById('mt').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const sub=document.getElementById('ms').value.trim(),bd=document.getElementById('mb').value.trim();
+  if(!to.length||!sub||!bd){document.getElementById('e-mail').classList.add('on');return}
+  document.getElementById('e-mail').classList.remove('on');
+  const btn=document.getElementById('mSend');btn.disabled=true;btn.textContent='Sending…';
+  const ok=await sendEmail(to,sub,bd);
+  btn.disabled=false;btn.textContent='Send email';
+  if(!ok)return;
+  logAudit(`Sent manual email — "${sub}" to ${to.join(', ')}`,null,'—','—');
+  document.getElementById('mt').value='';document.getElementById('ms').value='';document.getElementById('mb').value='';
+  toast(`Sent to ${to.length} recipient${to.length!==1?'s':''}`);persist();
+}
+
+/* ═══ notifications ═════════════════════ */
+function vNote(){
+  return head('note',`<button class="bt" onclick="runCycle()">Run reminder cycle</button>`)+`
+  <div class="c"><div class="b flush"><div class="tw"><table>
+    <thead><tr><th>Sent</th><th>Type</th><th>Subject</th><th>Recipients</th><th>Status</th></tr></thead>
+    <tbody>${notifs.map(n=>`<tr>
+      <td class="mono" style="font-size:12px;white-space:nowrap;color:var(--mut)">${fdt(n.on)}</td>
+      <td><span class="tag">${E(n.ty)}</span></td>
+      <td class="tt" style="font-weight:500">${E(n.sub)}</td>
+      <td class="mono" style="font-size:11.5px;color:var(--mut)">${n.to.map(t=>E(U(t).em)).join('<br>')}</td>
+      <td>${n.ok?'<span class="stt s-ok"><i></i>Sent</span>':'<span class="stt s-bad"><i></i>Retried</span>'}</td>
+    </tr>`).join('')}</tbody></table></div></div></div>`;
+}
+
+/* ═══ audit ═════════════════════════════ */
+function vAud(){
+  return head('aud',`<button class="bt" onclick="exportCsv()">Export</button>`)+`
+  <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
+  <div class="c"><div class="b flush"><div class="tw"><table>
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Release</th><th>Component</th><th>Transition</th><th>Reason</th></tr></thead>
+    <tbody>${audit.map(a=>`<tr>
+      <td class="mono" style="font-size:12px;white-space:nowrap;color:var(--mut)">${fdt(a.on)}</td>
+      <td class="tt" style="font-weight:500">${E(U(a.ac).nm)}</td><td>${E(a.act)}</td>
+      <td class="mono" style="font-size:11.5px">${a.rel?R(a.rel).ref:'—'}</td>
+      <td>${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'—')}</td>
+      <td style="color:var(--mut);font-size:12.5px">${a.prev==='—'?'—':`${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`}</td>
+      <td style="color:var(--stop);font-size:12.5px">${E(a.rs||'')||'<span style="color:var(--mut2)">—</span>'}</td></tr>`).join('')}
+    </tbody></table></div></div></div>`;
+}
+
+/* ═══ admin ═════════════════════════════ */
+function vUsr(){
+  return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`)+`
+  <div class="sec"><div class="mt">Inactive users are excluded from new approval and notification emails but remain visible in existing history.</div></div>
+  <div class="c"><div class="b flush"><div class="tw"><table>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Responsibility</th><th>Components</th><th>Status</th><th></th></tr></thead>
+    <tbody>${users.map(u=>`<tr>
+      <td class="tt">${E(u.nm)}</td><td class="mono" style="font-size:11.5px;color:var(--mut)">${E(u.em)}</td>
+      <td>${E(u.role)}</td><td style="color:var(--mut);font-size:12.5px">${E(u.resp)}</td>
+      <td>${u.comp.map(c=>E(C(c).nm)).join(', ')||'<span style="color:var(--mut2)">—</span>'}</td>
+      <td>${u.active?'<span class="stt s-ok"><i></i>Active</span>':'<span class="stt s-none"><i></i>Inactive</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="bt s" onclick="toggleU('${u.id}')">${u.active?'Deactivate':'Activate'}</button>
+        <button class="bt s d" onclick="mDelUser('${u.id}')">Delete</button>
+      </td>
+    </tr>`).join('')}</tbody></table></div></div></div>`;
+}
+function vGrp(){
+  return head('grp')+`<div class="c"><div class="b flush">
+    ${groups.map(g=>`<div class="li" style="align-items:flex-start"><div class="gr">
+      <div class="t">${E(g.nm)}</div>
+      <div class="d">Gate: ${SL(g.stage)} · escalates to ${E(U(g.esc).nm)} · reminder every ${g.remH}h, escalate after ${g.escH}h</div>
+      <div class="chips" style="margin-top:9px">${g.members.map(m=>`<span class="chip ${U(m).active?'':'off'}">
+        <span class="n">${E(U(m).nm)}</span><span class="e">${E(U(m).em)}</span></span>`).join('')}</div>
+    </div><div style="width:160px"><label>Condition</label>
+      <select onchange="setCond('${g.id}',this.value)">
+        <option value="any" ${g.cond==='any'?'selected':''}>Any one approver</option>
+        <option value="all" ${g.cond==='all'?'selected':''}>All approvers</option>
+      </select></div></div>`).join('')}
+  </div></div>`;
+}
+function vCmp(){
+  return head('cmp')+`<div class="c"><div class="b flush">
+    ${comps.map(c=>`<div class="li" style="align-items:flex-start"><div class="gr">
+      <div class="t">${E(c.nm)}</div>
+      <div class="d">${rels.filter(r=>r.comp===c.id).length} releases tracked · change alerts go to the active owners below, excluding whoever made the change</div>
+      <div class="chips" style="margin-top:9px">${c.owners.map(o=>`<span class="chip ${U(o).active?'':'off'}">
+        <span class="n">${E(U(o).nm)}</span></span>`).join('')}</div>
+    </div></div>`).join('')}
+  </div></div>`;
+}
+function vTpl(){
+  return head('tpl')+`
+  <div class="sec"><div class="mt">Fields in braces are replaced when a message is generated. Nothing beyond these fields is ever included in outbound email.</div></div>
+  ${tmpl.map((t,i)=>`<div class="c sec"><div class="h"><h3>${E(t.ev)}</h3></div><div class="b">
+    <div style="margin-bottom:14px"><label>Subject</label><input value="${E(t.sub)}" oninput="tmpl[${i}].sub=this.value"></div>
+    <div><label>Body</label><textarea rows="8" style="font-family:var(--m);font-size:12.5px" oninput="tmpl[${i}].bd=this.value">${E(t.bd)}</textarea></div>
+    <button class="bt s" style="margin-top:12px" onclick="persist();toast('Template saved')">Save template</button>
+  </div></div>`).join('')}`;
+}
+
+/* ═══ modals ════════════════════════════ */
+function shut(){document.getElementById('scrim').classList.remove('on')}
+function show(h){document.getElementById('md').innerHTML=h;document.getElementById('scrim').classList.add('on')}
+document.getElementById('scrim').addEventListener('click',e=>{if(e.target.id==='scrim')shut()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')shut()});
+
+function mApprove(rid,stage){
+  const r=R(rid),g=grpFor(r,stage),rec=g.members.filter(m=>U(m).active),t=tmpl[0];
+  const body=t.bd.replace('{approver}',U(rec[0]).nm).replace('{ref}',r.ref).replace('{name}',r.nm)
+    .replace('{component}',C(r.comp).nm).replace('{stage}',SL(stage)).replace('{owner}',U(r.owner).nm)
+    .replace('{plannedDate}',fd(r.plan)).replace('{description}',r.desc).replace('{validity}','72 hours');
+  const off=g.members.filter(m=>!U(m).active);
+  show(`<div class="h"><h3>Confirm before sending</h3><p>Nothing leaves the application until you confirm.</p></div>
+  <div class="b">
+    <div style="margin-bottom:18px"><label>Approval group</label>
+      <div style="font-weight:600;font-size:14.5px">${E(g.nm)}</div>
+      <div style="color:var(--mut);font-size:13px">${g.cond==='any'?'Any one approver may decide':'Every approver must approve'}</div></div>
+    <div style="margin-bottom:18px"><label>Recipients — ${rec.length}</label>
+      <div class="chips">${rec.map(m=>`<span class="chip"><span class="n">${E(U(m).nm)}</span><span class="e">${E(U(m).em)}</span></span>`).join('')}</div>
+      ${off.length?`<div style="color:var(--mut);font-size:12.5px;margin-top:8px">Excluded as inactive: ${off.map(m=>E(U(m).nm)).join(', ')}</div>`:''}</div>
+    <div><label>Message preview</label><div class="prev">Subject: ${E(t.sub.replace('{ref}',r.ref).replace('{stage}',SL(stage)))}
+
+${E(body)}</div></div>
+  </div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doApprove('${rid}','${stage}','${g.id}')">Send to ${rec.length} approver${rec.length!==1?'s':''}</button></div>`);
+}
+function doApprove(rid,stage,gid){
+  const r=R(rid),g=G(gid),rec=g.members.filter(m=>U(m).active);
+  apps_.unshift({id:nid('A'),rel:rid,stage,grp:gid,by:me,on:now(),cond:g.cond,status:'open',dec:[],rem:0,esc:false});
+  const prev=STATES[stageState(r,stage)][0];
+  r.st[stage]='waiting';
+  notifs.unshift({id:nid('N'),ty:'Approval request',sub:`Approval needed — ${r.ref} ${SL(stage)}`,to:rec,on:now(),ok:true});
+  rec.forEach(m=>{
+    const f=fillTmpl('Approval request',{approver:U(m).nm,ref:r.ref,name:r.nm,component:C(r.comp).nm,
+      stage:SL(stage),owner:U(r.owner).nm,plannedDate:fd(r.plan),description:r.desc,validity:'72 hours'});
+    if(f)sendEmail([U(m).em],f.subject,f.body);
+  });
+  logAudit(`Requested ${SL(stage)} approval`,rid,prev,'Waiting for approval');
+  shut();draw();toast(`Sent to ${rec.length} approver${rec.length!==1?'s':''}`);persist();
+}
+function decide(aid,u,d,reason){
+  const a=apps_.find(x=>x.id===aid),r=R(a.rel);
+  a.dec.push({u,d,on:now(),c:reason||''});
+  if(d==='rejected'){
+    a.status='rejected';r.st[a.stage]='rejected';
+    send('Approval outcome',`Rejected — ${r.ref} ${SL(a.stage)}`,[r.owner]);
+    logAudit(`Recorded ${SL(a.stage)} rejection`,a.rel,'Waiting for approval','Rejected',reason||'');
+    toast('Rejection recorded');
+  }else{
+    const g=G(a.grp),oks=a.dec.filter(x=>x.d==='approved').length;
+    const met=a.cond==='any'?oks>=1:oks>=g.members.filter(m=>U(m).active).length;
+    if(met){a.status='approved';r.st[a.stage]='approved';
+      send('Approval outcome',`Approved — ${r.ref} ${SL(a.stage)}`,[r.owner]);
+      logAudit(`Recorded ${SL(a.stage)} approval`,a.rel,'Waiting for approval','Approved');
+      toast(`${SL(a.stage)} approved — tick recorded`);
+    }else{logAudit(`Partial ${SL(a.stage)} approval`,a.rel,'Waiting for approval','Waiting for approval');
+      toast('Recorded — still awaiting others')}
+  }
+  shut();draw();persist();
+}
+function mReject(aid,u){
+  show(`<div class="h"><h3>Record a rejection</h3><p>A reason is required and stays in the release history.</p></div>
+  <div class="b"><label>Reason</label><textarea id="rj" rows="3" placeholder="What needs to change before this can be approved?"></textarea>
+    <div class="er" id="e-rj">Enter a reason before rejecting.</div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt d" onclick="okReject('${aid}','${u}')">Record rejection</button></div>`);
+}
+function okReject(aid,u){
+  const v=document.getElementById('rj').value.trim();
+  if(!v){document.getElementById('e-rj').classList.add('on');return}
+  decide(aid,u,'rejected',v);
+}
+function advance(rid){
+  const r=R(rid),[ok,why]=canAdvance(r);
+  if(!ok){toast(why);return}
+  const i=SI(r.cur),nx=STAGES[i+1],prev=SL(r.cur);
+  if(stageState(r,r.cur)!=='approved')r.st[r.cur]='completed';
+  r.cur=nx.k;r.st[nx.k]='inProgress';
+  if(nx.k==='done'){r.st.done='completed';r.actual=now().slice(0,10);
+    send('Release completed',`${r.ref} live in production`,
+      [r.owner,...new Set(apps_.filter(a=>a.rel===rid).flatMap(a=>a.dec.map(d=>d.u)))])}
+  logAudit('Advanced gate',rid,prev,nx.nm);
+  draw();toast(`Moved to ${nx.nm}`);persist();
+}
+function mReturn(rid){
+  const r=R(rid),i=SI(r.cur);
+  show(`<div class="h"><h3>Return to an earlier gate</h3><p>A reason is mandatory. Existing approvals stay in history and are not erased.</p></div>
+  <div class="b">
+    <div style="margin-bottom:16px"><label>Return to</label><select id="rt">
+      ${STAGES.slice(0,i).map(s=>`<option value="${s.k}">${s.nm}</option>`).join('')}</select></div>
+    <div><label>Reason</label><textarea id="rr" rows="3" placeholder="Why is the release going back?"></textarea>
+      <div class="er" id="e-rr">A reason is required.</div></div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt d" onclick="doReturn('${rid}')">Return release</button></div>`);
+}
+function doReturn(rid){
+  const r=R(rid),to=document.getElementById('rt').value,rs=document.getElementById('rr').value.trim();
+  if(!rs){document.getElementById('e-rr').classList.add('on');return}
+  const prev=SL(r.cur),ti=SI(to);
+  apps_.filter(a=>a.rel===rid&&a.status==='open').forEach(a=>a.status='rejected');
+  STAGES.forEach((s,i)=>{if(i>ti)r.st[s.k]='notStarted'});
+  r.st[to]='inProgress';r.cur=to;
+  send('Release returned',`${r.ref} returned to ${SL(to)}`,[r.owner]);
+  logAudit('Returned to earlier gate',rid,prev,SL(to),rs);
+  shut();draw();toast(`Returned to ${SL(to)}`);persist();
+}
+function mDate(rid){
+  const r=R(rid);
+  show(`<div class="h"><h3>Planned production date</h3><p>Required before production approval can be requested.</p></div>
+  <div class="b"><label>Date</label><input type="date" id="pd" value="${r.plan||''}">
+    <div class="er" id="e-pd">Choose a date.</div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doDate('${rid}')">Save date</button></div>`);
+}
+function doDate(rid){
+  const r=R(rid),v=document.getElementById('pd').value;
+  if(!v){document.getElementById('e-pd').classList.add('on');return}
+  const prev=r.plan?fd(r.plan):'not set';r.plan=v;
+  send('Release date set',`${r.ref} production date ${fd(v)}`,[r.owner]);
+  logAudit('Set planned release date',rid,prev,fd(v));
+  shut();draw();toast('Planned date saved');persist();
+}
+function mAtt(rid){
+  show(`<div class="h"><h3>Add an attachment</h3><p>Approval documents stay with the release history.</p></div>
+  <div class="b"><label>File name</label><input id="af" placeholder="uat-signoff.pdf">
+    <div class="er" id="e-af">Enter a file name.</div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doAtt('${rid}')">Attach</button></div>`);
+}
+function doAtt(rid){
+  const v=document.getElementById('af').value.trim();
+  if(!v){document.getElementById('e-af').classList.add('on');return}
+  R(rid).atts.push(v);logAudit('Added attachment',rid,'—',v);
+  shut();draw();toast('Attachment added');persist();
+}
+function mNew(){
+  show(`<div class="h"><h3>New release</h3><p>The release enters at gate one, grooming session.</p></div>
+  <div class="b"><div class="fg">
+    <div><label>Release name</label><input id="nn" placeholder="Order supersede lookup">
+      <div class="er" id="e-nn">A name is required.</div></div>
+    <div><label>Component</label><select id="nc">${comps.map(c=>`<option value="${c.id}">${E(c.nm)}</option>`).join('')}</select></div>
+    <div><label>Owner</label><select id="no">${users.filter(u=>u.role==='Release Management'&&u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
+    <div><label>Planned production date</label><input type="date" id="np"></div></div>
+    <div style="margin-top:16px"><label>What is changing</label>
+      <textarea id="nd" rows="3" placeholder="Described in business terms"></textarea></div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doNew()">Create release</button></div>`);
+}
+function doNew(){
+  const nm=document.getElementById('nn').value.trim();
+  if(!nm){document.getElementById('e-nn').classList.add('on');return}
+  const r={id:nid('R'),ref:'REL-'+(1044+rels.length),nm,
+    comp:document.getElementById('nc').value,owner:document.getElementById('no').value,
+    desc:document.getElementById('nd').value.trim()||'No description given.',
+    plan:document.getElementById('np').value||null,actual:null,cur:'groom',st:blank('groom'),cmts:[],atts:[]};
+  rels.unshift(r);logAudit('Created release',r.id,'—','Grooming session');
+  shut();openR(r.id);toast('Release created');persist();
+}
+function mPull(){
+  show(`<div class="h"><h3>Record a pull or applied change</h3><p>Every other active owner is alerted immediately.</p></div>
+  <div class="b"><div class="fg">
+    <div><label>Component</label><select id="pc">${comps.map(c=>`<option value="${c.id}">${E(c.nm)}</option>`).join('')}</select></div>
+    <div><label>Action</label><select id="pa"><option>Pulled latest changes</option><option>Applied changes</option></select></div>
+  </div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doPull()">Record and notify</button></div>`);
+}
+function doPull(){
+  const c=document.getElementById('pc').value,a=document.getElementById('pa').value;
+  const others=C(c).owners.filter(o=>o!==me&&U(o).active);
+  acts.unshift({id:nid('V'),comp:c,by:me,act:a,on:now(),ack:[]});
+  const f=fillTmpl('Change alert',{component:C(c).nm,actor:U(me).nm,time:fdt(now())});
+  send('Change alert',`${a} on ${C(c).nm} by ${U(me).nm}`,others,f?f.body:undefined);
+  logAudit(a,null,'—','—','',c);
+  shut();draw();toast(`${others.length} owner${others.length!==1?'s':''} notified`);persist();
+}
+function ack(vid){
+  const v=acts.find(x=>x.id===vid);
+  if(!v.ack.includes(me))v.ack.push(me);
+  logAudit('Acknowledged change alert',null,'—','—','',v.comp);
+  draw();toast('Acknowledged');persist();
+}
+function addCmt(rid){
+  const el=document.getElementById('cmt'),v=el.value.trim();
+  if(!v){toast('Type a note first');return}
+  R(rid).cmts.push({by:me,on:now(),tx:v});
+  logAudit('Added note',rid,'—','—');draw();toast('Note added');persist();
+}
+function toggleU(id){
+  const u=users.find(x=>x.id===id);u.active=!u.active;
+  logAudit(u.active?'Activated user':'Deactivated user',null,u.active?'Inactive':'Active',u.active?'Active':'Inactive');
+  draw();toast(`${u.nm} ${u.active?'activated':'deactivated'}`);persist();
+}
+function mDelUser(id){
+  const u=users.find(x=>x.id===id);if(!u)return;
+  const ownsRels=rels.filter(r=>r.owner===id&&r.cur!=='done').length;
+  const inGroups=groups.filter(g=>g.members.includes(id)||g.esc===id).length;
+  show(`<div class="h"><h3>Delete ${E(u.nm)}?</h3><p>This removes them from users, ownership and approval groups. Past history keeps their name.</p></div>
+  <div class="b">
+    ${(ownsRels||inGroups)?`<div class="mt w" style="margin-bottom:14px">
+      ${ownsRels?`Owns ${ownsRels} active release${ownsRels!==1?'s':''}. `:''}
+      ${inGroups?`Member of ${inGroups} approval group${inGroups!==1?'s':''}.`:''}
+      Reassign these first if you don't want them left without an owner or approver.</div>`:''}
+    <p style="color:var(--ink2);font-size:13.5px">This cannot be undone.</p>
+  </div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt d" onclick="doDelUser('${id}')">Delete user</button></div>`);
+}
+function doDelUser(id){
+  const u=users.find(x=>x.id===id);if(!u)return;
+  users=users.filter(x=>x.id!==id);
+  comps.forEach(c=>{c.owners=c.owners.filter(o=>o!==id)});
+  groups.forEach(g=>{g.members=g.members.filter(m=>m!==id)});
+  logAudit('Deleted user',null,u.nm,'—');
+  shut();draw();toast(`${u.nm} deleted`);persist();
+}
+function setCond(gid,v){G(gid).cond=v;logAudit('Changed approval condition',null,'—',v);draw();toast('Condition updated');persist()}
+function mUser(){
+  show(`<div class="h"><h3>Add user</h3><p>The email held here is used for every approval and alert.</p></div>
+  <div class="b"><div class="fg">
+    <div><label>Name</label><input id="un"><div class="er" id="e-un">A name is required.</div></div>
+    <div><label>Email</label><input id="ue" placeholder="name@corp.example"><div class="er" id="e-ue">A valid email is required.</div></div>
+    <div><label>Role</label><select id="ur"><option>Release Management</option><option>Approver</option><option>Admin</option></select></div>
+    <div><label>Responsibility</label><input id="up" placeholder="UAT approver — business"></div>
+  </div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button><button class="bt p" onclick="doUser()">Add user</button></div>`);
+}
+function doUser(){
+  const n=document.getElementById('un').value.trim(),e=document.getElementById('ue').value.trim();
+  let bad=false;
+  if(!n){document.getElementById('e-un').classList.add('on');bad=true}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){document.getElementById('e-ue').classList.add('on');bad=true}
+  if(bad)return;
+  users.push({id:nid('U'),nm:n,em:e,role:document.getElementById('ur').value,
+    resp:document.getElementById('up').value.trim()||'—',comp:[],active:true});
+  logAudit('Added user',null,'—',n);shut();draw();toast('User added');persist();
+}
+function runCycle(){
+  let rem=0,es=0;
+  apps_.filter(a=>a.status==='open').forEach(a=>{
+    const g=G(a.grp),r=R(a.rel);
+    const pend=g.members.filter(m=>!a.dec.some(d=>d.u===m)&&U(m).active);
+    if(!pend.length)return;
+    a.rem++;
+    {const f=fillTmpl('Approval reminder',{approver:U(pend[0]).nm,ref:r.ref,requestedOn:fdt(a.on)});
+     send('Approval reminder',`Reminder — ${r.ref} ${SL(a.stage)} still pending`,pend,f?f.body:undefined);}
+    rem++;
+    if(a.rem>=2&&!a.esc){a.esc=true;
+      {const f=fillTmpl('Escalation',{escalation:U(g.esc).nm,ref:r.ref,pending:pend.map(p=>U(p).nm).join(', ')});
+       send('Escalation',`Escalation — ${r.ref} ${SL(a.stage)} overdue`,[g.esc],f?f.body:undefined);}
+      logAudit('Escalated pending approval',a.rel,'Waiting for approval','Waiting for approval',
+        `No decision from ${pend.map(p=>U(p).nm).join(', ')} within ${g.escH}h`);es++}
+  });
+  draw();toast(rem?`${rem} reminder${rem!==1?'s':''} sent${es?`, ${es} escalated`:''}`:'Nothing pending');persist();
+}
+function exportCsv(){
+  const rows=[['When','Who','Action','Release','Component','Previous','New','Reason']];
+  audit.forEach(a=>rows.push([fdt(a.on),U(a.ac).nm,a.act,a.rel?R(a.rel).ref:'',
+    a.comp?C(a.comp).nm:(a.rel?C(R(a.rel).comp).nm:''),a.prev,a.next,a.rs]));
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
+    a.href=u;a.download='release-audit-history.csv';a.click();URL.revokeObjectURL(u);toast('History exported')}
+  catch(e){navigator.clipboard?.writeText(csv);toast('History copied to clipboard')}
+}
+
+boot();
+</script>
+</body>
+</html>
