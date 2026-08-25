@@ -249,7 +249,7 @@ input::placeholder,textarea::placeholder{color:var(--mut2)}
   <div class="main">
     <div class="top">
       <span class="crumb" id="crumb">Workspace</span>
-      <div class="sp"><div class="seg" id="roles"></div></div>
+      <div class="sp"><div id="roles" style="display:flex;align-items:center;gap:14px"></div></div>
     </div>
     <div class="body" id="view"></div>
   </div>
@@ -499,9 +499,10 @@ function drawNav(){
   });
   document.getElementById('rail').innerHTML=h;
   document.getElementById('roles').innerHTML=authUser?`
-    <span style="font-size:12.5px;color:var(--mut);margin-right:4px">${E(authUser.name)}${authUser.is_admin?' · Admin':''}</span>
-    <button onclick="go('mypw')">Change password</button>
-    <button onclick="doLogout()">Logout</button>`:'';
+    <span style="font-size:12.5px;color:var(--ink2);font-weight:500;white-space:nowrap">${E(authUser.name)}${authUser.is_admin?' <span style="color:var(--go);font-weight:600">· Admin</span>':''}</span>
+    <span style="width:1px;height:16px;background:var(--line2)"></span>
+    <button class="bt s" onclick="go('mypw')">Change password</button>
+    <button class="bt s" onclick="doLogout()">Logout</button>`:'';
 }
 function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();draw();window.scrollTo(0,0)}
 function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
@@ -777,7 +778,7 @@ function vDash(){
     <div class="c"><div class="h"><h3>Releases in progress</h3>
       <div class="r"><button class="lk" onclick="go('rels')">View all →</button></div></div>
       <div class="b flush"><div class="tw"><table>
-      <thead><tr><th>Release</th><th>Component</th><th>Gate</th><th>State</th><th>Planned</th></tr></thead><tbody>
+      <thead><tr><th>Team Name</th><th>Component</th><th>Gate</th><th>State</th><th>Planned</th></tr></thead><tbody>
       ${rels.filter(r=>r.cur!=='done').map(r=>`<tr class="k" onclick="openR('${r.id}')">
         <td><div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div></td>
         <td>${E(C(r.comp).nm)}</td><td>${E(SL(r.cur))}</td><td>${stt(stageState(r,r.cur))}</td>
@@ -848,7 +849,7 @@ function vRels(){
         ${comps.map(c=>`<option value="${c.id}" ${flt.comp===c.id?'selected':''}>${E(c.nm)}</option>`).join('')}</select></div>
       <div><label>Gate</label><select onchange="setF('stage',this.value)"><option value="all">All gates</option>
         ${STAGES.map(s=>`<option value="${s.k}" ${flt.stage===s.k?'selected':''}>${s.nm}</option>`).join('')}</select></div>
-      <div><label>Owner</label><select onchange="setF('owner',this.value)"><option value="all">All owners</option>
+      <div><label>Who is the Developer</label><select onchange="setF('owner',this.value)"><option value="all">Anyone</option>
         ${users.filter(u=>u.role==='Release Management').map(u=>`<option value="${u.id}" ${flt.owner===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
       <div><label>State</label><select onchange="setF('st',this.value)"><option value="all">Any state</option>
         ${Object.keys(STATES).map(k=>`<option value="${k}" ${flt.st===k?'selected':''}>${STATES[k][0]}</option>`).join('')}</select></div>
@@ -856,7 +857,7 @@ function vRels(){
   </div></div>
 
   <div class="c"><div class="b flush">${rows.length?`<div class="tw"><table>
-    <thead><tr><th>Release</th><th>Component</th><th>Owner</th><th>Stage</th><th>State</th><th>Business</th><th>Production</th><th>Planned</th></tr></thead>
+    <thead><tr><th>Team Name</th><th>Component</th><th>Who is the Developer</th><th>Stage</th><th>State</th><th>Business</th><th>Production</th><th>Planned</th></tr></thead>
     <tbody>${rows.map(r=>`<tr class="k" onclick="openR('${r.id}')">
       <td><div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div></td>
       <td>${E(C(r.comp).nm)}</td><td>${E(U(r.owner).nm)}</td><td>${E(SL(r.cur))}</td>
@@ -970,7 +971,7 @@ function vRel(){
         <div class="kv">
           <div class="k">Reference</div><div class="mono" style="font-size:12.5px">${r.ref}</div>
           <div class="k">Component</div><div>${E(C(r.comp).nm)}</div>
-          <div class="k">Owner</div><div>${E(U(r.owner).nm)}</div>
+          <div class="k">Who is the Developer</div><div>${E(U(r.owner).nm)}</div>
           <div class="k">Current stage</div><div>${E(SL(r.cur))}</div>
           <div class="k">Business</div><div>${(()=>{const d=lastDec(r.id,'uat');
             return d?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:11px;color:var(--mut2);margin-top:3px">${fdt(d.on)} · ${E(U(d.u).nm)}</div>`
@@ -1291,10 +1292,10 @@ function doAtt(rid){
 function mNew(){
   show(`<div class="h"><h3>New release</h3><p>The release enters at gate one, grooming session.</p></div>
   <div class="b"><div class="fg">
-    <div><label>Release name</label><input id="nn" placeholder="Order supersede lookup">
+    <div><label>Team Name</label><input id="nn" placeholder="Order supersede lookup">
       <div class="er" id="e-nn">A name is required.</div></div>
     <div><label>Component</label><select id="nc">${comps.map(c=>`<option value="${c.id}">${E(c.nm)}</option>`).join('')}</select></div>
-    <div><label>Owner</label><select id="no">${users.filter(u=>u.role==='Release Management'&&u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
+    <div><label>Who is the Developer</label><select id="no">${users.filter(u=>u.role==='Release Management'&&u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
     <div><label>Planned production date</label><input type="date" id="np"></div></div>
     <div style="margin-top:16px"><label>What is changing</label>
       <textarea id="nd" rows="3" placeholder="Described in business terms"></textarea></div></div>
