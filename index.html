@@ -314,6 +314,10 @@ async function checkEmailStatus(){
 function applyState(s){
   users=s.users;comps=s.comps;groups=s.groups;rels=s.rels;apps_=s.apps_;
   notifs=s.notifs;acts=s.acts;audit=s.audit;tmpl=s.tmpl;uid=Math.max(uid,s.uid||0);
+  if(!users.find(u=>u.id===me)){
+    const fb=users.find(u=>u.role==='Admin'&&u.active)||users.find(u=>u.active)||users[0];
+    if(fb)me=fb.id;
+  }
 }
 function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl}}
 async function persist(){
@@ -1124,6 +1128,9 @@ function toggleU(id){
 }
 function mDelUser(id){
   const u=users.find(x=>x.id===id);if(!u)return;
+  if(u.role==='Admin'&&users.filter(x=>x.role==='Admin').length<=1){
+    toast('Cannot delete the last Admin — promote another user first');return;
+  }
   const ownsRels=rels.filter(r=>r.owner===id&&r.cur!=='done').length;
   const inGroups=groups.filter(g=>g.members.includes(id)||g.esc===id).length;
   show(`<div class="h"><h3>Delete ${E(u.nm)}?</h3><p>This removes them from users, ownership and approval groups. Past history keeps their name.</p></div>
