@@ -310,6 +310,19 @@ let notifs=[];
 let acts=[];
 let audit=[];
 let tmpl=[];
+let conflicts=[]; const CF=id=>conflicts.find(c=>c.id===id);
+
+/* ═══ conflict tracker (Phase 4) ═════════ */
+const OBJECT_TYPES=['SQL','PL/SQL','FMB','Oracle Reports','Other'];
+const CONFLICT_TYPES=['Object overlap','Code merge conflict','Data conflict','Environment conflict','Deployment sequencing','Other'];
+const SEVERITIES=['Low','Medium','High','Critical'];
+const ENVIRONMENTS=['Dev','Test','UAT','Prod'];
+const CF_STATUSES=['Open','In Progress','Resolved','Closed'];
+const CF_STATUS_CLS={Open:'s-bad',['In Progress']:'s-wait',Resolved:'s-ok',Closed:'s-none'};
+const CF_SEV_CLS={Low:'s-none',Medium:'s-wait',High:'s-bad',Critical:'s-bad'};
+let cflt={q:'',rel:'all',jira:'',dev:'all',objType:'all',objName:'',env:'all',severity:'all',
+  status:'all',assignedTo:'all',conflictType:'all',sort:'idDesc',page:1};
+const CF_PAGE_SIZE=15;
 
 /* ═══ server sync ═══════════════════════ */
 let emailConfigured=false,emailFrom=null;
@@ -337,6 +350,7 @@ const RELEASE_TEXT_FIELDS=['workstream','jira','po','scrum','bizOwner','financeU
 function applyState(s){
   users=s.users;comps=s.comps;groups=s.groups;rels=s.rels;apps_=s.apps_;
   notifs=s.notifs;acts=s.acts;audit=s.audit;tmpl=s.tmpl;uid=Math.max(uid,s.uid||0);
+  conflicts=Array.isArray(s.conflicts)?s.conflicts:[];
   if(!users.find(u=>u.id===me)){
     const fb=users.find(u=>u.role==='Admin'&&u.active)||users.find(u=>u.active)||users[0];
     if(fb)me=fb.id;
@@ -349,7 +363,7 @@ function applyState(s){
     else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
   });
 }
-function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl}}
+function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl,conflicts}}
 async function persist(){
   try{
     const res=await fetch('/api/state',{method:'PUT',credentials:'same-origin',headers:jsonHeaders,body:JSON.stringify(snapshot())});
@@ -504,7 +518,8 @@ const NAV=[
    {k:'dash',l:'Dashboard',ic:'🏠'},
    {k:'mine',l:'My pending actions',ic:'⏳',ct:()=>pendingForMe().length,alert:1},
    {k:'rels',l:'Releases',ic:'📦',ct:()=>rels.filter(r=>r.cur!=='done').length},
-   {k:'cal', l:'Release calendar',ic:'📅'}]},
+   {k:'cal', l:'Release calendar',ic:'📅'},
+   {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>conflicts.filter(c=>c.status==='Open').length}]},
  {g:'Messages',items:[
    {k:'chg', l:'Change activity',ic:'🔔',ct:unackCount,alert:1},
    {k:'mail',l:'Compose email',ic:'✉️'},
@@ -523,6 +538,7 @@ function drawNav(){
     if(g.adminOrPerm&&!hasPerm(g.adminOrPerm))return;
     h+=`<div class="ngrp">${g.g}</div>`;
     g.items.forEach(it=>{
+      if(it.perm&&!hasPerm(it.perm))return;
       const n=it.ct?it.ct():0;
       h+=`<div class="ni ${view===it.k?'on':''}" onclick="go('${it.k}')"><span style="margin-right:2px">${it.ic||''}</span><span>${it.l}</span>
         ${n?(it.alert?`<span class="dt"></span>`:`<span class="ct">${n}</span>`):''}</div>`;
@@ -543,6 +559,7 @@ const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'
  mine:['My pending actions','Only the items waiting on you.'],
  rels:['Releases','Every release being tracked, with its current gate.'],
  rel:['Release detail',''],cal:['Release calendar','Planned production releases by date.'],
+ cft:['Conflict Tracker','Track conflicts between releases and development changes.'],
  chg:['Change activity','Who pulled or applied changes, and who was told.'],
  mail:['Compose email','Send a one-off message to any address, right now.'],
  note:['Notification history','Every message the application has sent.'],
@@ -565,6 +582,10 @@ function draw(){
     v.innerHTML=vAccts();return;
   }
   if(['usr','grp','cmp','tpl'].includes(view)&&!isAdmin()){v.innerHTML=vRO('This page is limited to Admin.');return}
+  if(view==='cft'){
+    if(!hasPerm('view_conflicts')){v.innerHTML=vRO('You need the view_conflicts permission to see this page.');return}
+    v.innerHTML=vConflicts();return;
+  }
   if(!hasPerm('view_releases')){v.innerHTML=vRO('You need the view_releases permission to see this page.');return}
   v.innerHTML=({dash:vDash,mine:vMine,rels:vRels,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
     aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
@@ -1058,6 +1079,253 @@ function vRel(){
       <td style="text-align:right">${canEdit()?`<button class="bt s" onclick="mEditMilestone('${r.id}','${m.key}')">Edit</button>`:''}</td>
     </tr>`}).join('')}
     </tbody></table></div></div></div>`;
+}
+
+/* ═══ conflict tracker ══════════════════ */
+function setCF(k,v){cflt[k]=v;cflt.page=1;draw()}
+function clearCF(){cflt={q:'',rel:'all',jira:'',dev:'all',objType:'all',objName:'',env:'all',severity:'all',
+  status:'all',assignedTo:'all',conflictType:'all',sort:'idDesc',page:1};draw()}
+function filteredConflicts(){
+  return conflicts.filter(c=>{
+    if(cflt.rel!=='all'&&c.rel!==cflt.rel)return false;
+    if(cflt.jira&&!(c.jira||'').toLowerCase().includes(cflt.jira.toLowerCase()))return false;
+    if(cflt.dev!=='all'&&c.developer!==cflt.dev)return false;
+    if(cflt.objType!=='all'&&c.objectType!==cflt.objType)return false;
+    if(cflt.objName&&!(c.objectName||'').toLowerCase().includes(cflt.objName.toLowerCase()))return false;
+    if(cflt.env!=='all'&&c.environment!==cflt.env)return false;
+    if(cflt.severity!=='all'&&c.severity!==cflt.severity)return false;
+    if(cflt.status!=='all'&&c.status!==cflt.status)return false;
+    if(cflt.assignedTo!=='all'&&c.assignedTo!==cflt.assignedTo)return false;
+    if(cflt.conflictType!=='all'&&c.conflictType!==cflt.conflictType)return false;
+    if(cflt.q){
+      const q=cflt.q.toLowerCase();
+      const hay=[c.id,c.summary,c.description,c.objectName,c.jira].filter(Boolean).join(' ').toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  }).sort((a,b)=>{
+    if(cflt.sort==='idAsc')return (a.identifiedDate||'').localeCompare(b.identifiedDate||'');
+    if(cflt.sort==='sevDesc'){const ord={Critical:3,High:2,Medium:1,Low:0};return (ord[b.severity]||0)-(ord[a.severity]||0)}
+    if(cflt.sort==='status')return (a.status||'').localeCompare(b.status||'');
+    return (b.identifiedDate||'').localeCompare(a.identifiedDate||'');
+  });
+}
+function vConflicts(){
+  const all=filteredConflicts();
+  const totalPages=Math.max(1,Math.ceil(all.length/CF_PAGE_SIZE));
+  if(cflt.page>totalPages)cflt.page=totalPages;
+  const pageRows=all.slice((cflt.page-1)*CF_PAGE_SIZE,cflt.page*CF_PAGE_SIZE);
+  const openCount=conflicts.filter(c=>c.status==='Open').length;
+  const criticalCount=conflicts.filter(c=>c.severity==='Critical'&&c.status!=='Closed').length;
+
+  return head('cft',(hasPerm('create_conflict')?`<button class="bt p" onclick="mNewConflict()">New conflict</button>`:'')+
+    `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+`
+  <div class="sec"><div class="stats">
+    <div class="stat"><div class="l">Total conflicts</div><div class="n">${conflicts.length}</div><div class="h">tracked</div></div>
+    <div class="stat"><div class="l">Open</div><div class="n ${openCount?'w':''}">${openCount}</div><div class="h">need attention</div></div>
+    <div class="stat"><div class="l">Critical</div><div class="n ${criticalCount?'s':'g'}">${criticalCount}</div><div class="h">${criticalCount?'unresolved':'none open'}</div></div>
+    <div class="stat"><div class="l">Showing</div><div class="n">${all.length}</div><div class="h">match current filters</div></div>
+  </div></div>
+
+  <div class="sec c"><div class="b">
+    <div class="fg">
+      <div><label>Search</label><input value="${E(cflt.q)}" placeholder="ID, summary, object, Jira #"
+        oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(draw,220)"></div>
+      <div><label>Team Name</label><select onchange="setCF('rel',this.value)"><option value="all">All releases</option>
+        ${rels.map(r=>`<option value="${r.id}" ${cflt.rel===r.id?'selected':''}>${E(r.nm)}</option>`).join('')}</select></div>
+      <div><label>Object Type</label><select onchange="setCF('objType',this.value)"><option value="all">All object types</option>
+        ${OBJECT_TYPES.map(t=>`<option ${cflt.objType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Environment</label><select onchange="setCF('env',this.value)"><option value="all">All environments</option>
+        ${ENVIRONMENTS.map(t=>`<option ${cflt.env===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Severity</label><select onchange="setCF('severity',this.value)"><option value="all">Any severity</option>
+        ${SEVERITIES.map(t=>`<option ${cflt.severity===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Status</label><select onchange="setCF('status',this.value)"><option value="all">Any status</option>
+        ${CF_STATUSES.map(t=>`<option ${cflt.status===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Conflict Type</label><select onchange="setCF('conflictType',this.value)"><option value="all">Any type</option>
+        ${CONFLICT_TYPES.map(t=>`<option ${cflt.conflictType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Who is the Developer</label><select onchange="setCF('dev',this.value)"><option value="all">Anyone</option>
+        ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${cflt.dev===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
+      <div><label>Assigned To</label><select onchange="setCF('assignedTo',this.value)"><option value="all">Anyone</option>
+        ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${cflt.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
+      <div><label>Object Name</label><input value="${E(cflt.objName)}" placeholder="e.g. CUSTOMER_FORM.fmb"
+        oninput="cflt.objName=this.value;cflt.page=1;clearTimeout(window._cft2);window._cft2=setTimeout(draw,220)"></div>
+      <div><label>Jira #</label><input value="${E(cflt.jira)}" placeholder="e.g. CD-123"
+        oninput="cflt.jira=this.value;cflt.page=1;clearTimeout(window._cft3);window._cft3=setTimeout(draw,220)"></div>
+      <div><label>Sort by</label><select onchange="setCF('sort',this.value)">
+        <option value="idDesc" ${cflt.sort==='idDesc'?'selected':''}>Identified date (newest)</option>
+        <option value="idAsc" ${cflt.sort==='idAsc'?'selected':''}>Identified date (oldest)</option>
+        <option value="sevDesc" ${cflt.sort==='sevDesc'?'selected':''}>Severity (highest first)</option>
+        <option value="status" ${cflt.sort==='status'?'selected':''}>Status</option></select></div>
+    </div>
+    <div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>
+  </div></div>
+
+  <div class="c"><div class="b flush">${pageRows.length?`<div class="tw"><table>
+    <thead><tr><th>ID</th><th>Team Name</th><th>Jira #</th><th>Object</th><th>Type</th><th>Environment</th>
+      <th>Severity</th><th>Status</th><th>Assigned To</th><th>Identified</th><th></th></tr></thead>
+    <tbody>${pageRows.map(c=>`<tr class="k" onclick="mEditConflict('${c.id}')">
+      <td class="mono" style="font-size:11.5px">${c.id}</td>
+      <td>${c.rel&&R(c.rel)?E(R(c.rel).nm):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td class="mono" style="font-size:11.5px">${c.jira?E(c.jira):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td>${c.objectName?E(c.objectName):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td><span class="tag">${E(c.objectType||'—')}</span></td>
+      <td>${E(c.environment||'—')}</td>
+      <td><span class="stt ${CF_SEV_CLS[c.severity]||'s-none'}"><i></i>${E(c.severity||'—')}</span></td>
+      <td><span class="stt ${CF_STATUS_CLS[c.status]||'s-none'}"><i></i>${E(c.status||'—')}</span></td>
+      <td>${c.assignedTo?E(U(c.assignedTo).nm):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td class="mono" style="font-size:12px">${fd(c.identifiedDate)}</td>
+      <td style="text-align:right">${hasPerm('delete_conflict')?`<button class="bt s d" onclick="event.stopPropagation();mDelConflict('${c.id}')">Delete</button>`:''}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?((cflt.page-1)*CF_PAGE_SIZE+1):0}–${(cflt.page-1)*CF_PAGE_SIZE+pageRows.length} of ${all.length}</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="bt s" ${cflt.page<=1?'disabled':''} onclick="cflt.page--;draw()">← Prev</button>
+        <span style="font-size:12.5px;color:var(--mut)">Page ${cflt.page} of ${totalPages}</span>
+        <button class="bt s" ${cflt.page>=totalPages?'disabled':''} onclick="cflt.page++;draw()">Next →</button>
+      </div>
+    </div>`
+    :'<div class="ept"><h4>No conflicts match</h4><p>Adjust the filters above, or record a new conflict to get started.</p></div>'}
+  </div></div>`;
+}
+function mNewConflict(){
+  show(`<div class="h"><h3>New conflict</h3><p>Record a conflict between releases or development changes.</p></div>
+  <div class="b"><div class="fg">
+    <div><label>Team Name (release)</label><select id="cf-rel"><option value="">— none —</option>
+      ${rels.map(r=>`<option value="${r.id}">${E(r.nm)} (${r.ref})</option>`).join('')}</select></div>
+    <div><label>Jira #</label><input id="cf-jira"></div>
+    <div><label>Who is the Developer</label><select id="cf-dev"><option value="">— none —</option>
+      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
+    <div><label>Conflict Type</label><select id="cf-ctype">${CONFLICT_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+    <div><label>Object Type</label><select id="cf-otype">${OBJECT_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+    <div><label>Object Name</label><input id="cf-oname" placeholder="e.g. CUSTOMER_FORM.fmb"></div>
+    <div><label>Environment</label><select id="cf-env">${ENVIRONMENTS.map(t=>`<option>${t}</option>`).join('')}</select></div>
+    <div><label>Severity</label><select id="cf-sev">${SEVERITIES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+    <div><label>Status</label><select id="cf-status">${CF_STATUSES.map(t=>`<option>${t}</option>`).join('')}</select></div>
+    <div><label>Assigned To</label><select id="cf-assigned"><option value="">— none —</option>
+      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
+    <div><label>Identified date</label><input type="date" id="cf-iddate" value="${now().slice(0,10)}"></div>
+  </div>
+  <div style="margin-top:16px"><label>Summary</label><input id="cf-summary" placeholder="Short summary">
+    <div class="er" id="e-cf-summary">A summary is required.</div></div>
+  <div style="margin-top:14px"><label>Conflict description</label><textarea id="cf-desc" rows="3"></textarea></div>
+  </div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt p" onclick="doNewConflict()">Create conflict</button></div>`);
+}
+function doNewConflict(){
+  const summary=document.getElementById('cf-summary').value.trim();
+  if(!summary){document.getElementById('e-cf-summary').classList.add('on');return}
+  const c={
+    id:nid('CFL-'),
+    rel:document.getElementById('cf-rel').value||null,
+    jira:document.getElementById('cf-jira').value.trim(),
+    summary,
+    developer:document.getElementById('cf-dev').value||null,
+    conflictType:document.getElementById('cf-ctype').value,
+    objectType:document.getElementById('cf-otype').value,
+    objectName:document.getElementById('cf-oname').value.trim(),
+    environment:document.getElementById('cf-env').value,
+    description:document.getElementById('cf-desc').value.trim(),
+    identifiedDate:document.getElementById('cf-iddate').value||null,
+    identifiedBy:me,
+    severity:document.getElementById('cf-sev').value,
+    status:document.getElementById('cf-status').value,
+    assignedTo:document.getElementById('cf-assigned').value||null,
+    resolution:'',resolutionDate:null,comments:'',atts:[]
+  };
+  conflicts.unshift(c);
+  logAudit(`Created conflict — ${summary}`,null,'—',c.status);
+  shut();draw();toast('Conflict recorded');persist();
+}
+function mEditConflict(id){
+  const c=CF(id);if(!c)return;
+  const canWrite=hasPerm('edit_conflict');
+  show(`<div class="h"><h3>${c.id}</h3><p>${E(c.summary)}</p></div>
+  <div class="b"><div class="fg">
+    <div><label>Team Name (release)</label><select id="cf-rel" ${canWrite?'':'disabled'}><option value="">— none —</option>
+      ${rels.map(r=>`<option value="${r.id}" ${c.rel===r.id?'selected':''}>${E(r.nm)} (${r.ref})</option>`).join('')}</select></div>
+    <div><label>Jira #</label><input id="cf-jira" value="${E(c.jira||'')}" ${canWrite?'':'disabled'}></div>
+    <div><label>Who is the Developer</label><select id="cf-dev" ${canWrite?'':'disabled'}><option value="">— none —</option>
+      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${c.developer===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
+    <div><label>Conflict Type</label><select id="cf-ctype" ${canWrite?'':'disabled'}>${CONFLICT_TYPES.map(t=>`<option ${c.conflictType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div><label>Object Type</label><select id="cf-otype" ${canWrite?'':'disabled'}>${OBJECT_TYPES.map(t=>`<option ${c.objectType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div><label>Object Name</label><input id="cf-oname" value="${E(c.objectName||'')}" ${canWrite?'':'disabled'}></div>
+    <div><label>Environment</label><select id="cf-env" ${canWrite?'':'disabled'}>${ENVIRONMENTS.map(t=>`<option ${c.environment===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div><label>Severity</label><select id="cf-sev" ${canWrite?'':'disabled'}>${SEVERITIES.map(t=>`<option ${c.severity===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div><label>Status</label><select id="cf-status" ${canWrite?'':'disabled'}>${CF_STATUSES.map(t=>`<option ${c.status===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div><label>Assigned To</label><select id="cf-assigned" ${canWrite?'':'disabled'}><option value="">— none —</option>
+      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${c.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
+    <div><label>Identified date</label><input type="date" id="cf-iddate" value="${c.identifiedDate||''}" ${canWrite?'':'disabled'}></div>
+  </div>
+  <div style="margin-top:16px"><label>Summary</label><input id="cf-summary" value="${E(c.summary)}" ${canWrite?'':'disabled'}></div>
+  <div style="margin-top:14px"><label>Conflict description</label><textarea id="cf-desc" rows="3" ${canWrite?'':'disabled'}>${E(c.description||'')}</textarea></div>
+  <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+    <div style="font-family:var(--d);font-weight:600;font-size:13px;margin-bottom:12px">Resolution</div>
+    <div class="fg"><div><label>Resolution date</label><input type="date" id="cf-resdate" value="${c.resolutionDate||''}" ${canWrite?'':'disabled'}></div></div>
+    <div style="margin-top:12px"><label>Resolution</label><textarea id="cf-res" rows="2" ${canWrite?'':'disabled'}>${E(c.resolution||'')}</textarea></div>
+  </div>
+  <div style="margin-top:14px"><label>Comments</label><textarea id="cf-comments" rows="2" ${canWrite?'':'disabled'}>${E(c.comments||'')}</textarea></div>
+  <div style="margin-top:14px"><label>Attachments</label>
+    <div>${c.atts&&c.atts.length?c.atts.map(a=>`<div class="mono" style="font-size:12px">${E(a)}</div>`).join(''):'<span style="color:var(--mut)">None</span>'}</div>
+    ${hasPerm('upload_files')?`<input id="cf-newatt" placeholder="filename.sql" style="margin-top:8px">
+    <button class="bt s" style="margin-top:8px" onclick="addConflictAtt('${id}')">Add attachment</button>`:''}
+  </div>
+  </div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    ${canWrite?`<button class="bt p" onclick="doEditConflict('${id}')">Save</button>`:''}</div>`);
+}
+function doEditConflict(id){
+  const c=CF(id);if(!c)return;
+  c.rel=document.getElementById('cf-rel').value||null;
+  c.jira=document.getElementById('cf-jira').value.trim();
+  c.developer=document.getElementById('cf-dev').value||null;
+  c.conflictType=document.getElementById('cf-ctype').value;
+  c.objectType=document.getElementById('cf-otype').value;
+  c.objectName=document.getElementById('cf-oname').value.trim();
+  c.environment=document.getElementById('cf-env').value;
+  c.severity=document.getElementById('cf-sev').value;
+  c.status=document.getElementById('cf-status').value;
+  c.assignedTo=document.getElementById('cf-assigned').value||null;
+  c.identifiedDate=document.getElementById('cf-iddate').value||null;
+  c.summary=document.getElementById('cf-summary').value.trim()||c.summary;
+  c.description=document.getElementById('cf-desc').value.trim();
+  c.resolutionDate=document.getElementById('cf-resdate').value||null;
+  c.resolution=document.getElementById('cf-res').value.trim();
+  c.comments=document.getElementById('cf-comments').value.trim();
+  logAudit(`Updated conflict — ${c.id}`,null,'—',c.status);
+  shut();draw();toast('Conflict updated');persist();
+}
+function addConflictAtt(id){
+  const c=CF(id);const v=document.getElementById('cf-newatt').value.trim();
+  if(!v)return;
+  if(!c.atts)c.atts=[];
+  c.atts.push(v);
+  logAudit(`Added attachment to conflict ${c.id}`,null,'—',v);
+  mEditConflict(id);persist();
+}
+function mDelConflict(id){
+  const c=CF(id);if(!c)return;
+  show(`<div class="h"><h3>Delete ${c.id}?</h3><p>${E(c.summary)} — this cannot be undone.</p></div>
+  <div class="b"></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt d" onclick="doDelConflict('${id}')">Delete</button></div>`);
+}
+function doDelConflict(id){
+  conflicts=conflicts.filter(c=>c.id!==id);
+  logAudit(`Deleted conflict ${id}`,null,'—','—');
+  shut();draw();toast('Conflict deleted');persist();
+}
+function exportConflictsCsv(){
+  const rows=[['ID','Team Name','Jira #','Developer','Conflict Type','Object Type','Object Name','Environment',
+    'Description','Identified Date','Identified By','Severity','Status','Assigned To','Resolution','Resolution Date','Comments']];
+  conflicts.forEach(c=>rows.push([c.id,c.rel&&R(c.rel)?R(c.rel).nm:'',c.jira||'',c.developer?U(c.developer).nm:'',
+    c.conflictType||'',c.objectType||'',c.objectName||'',c.environment||'',c.description||'',fd(c.identifiedDate),
+    c.identifiedBy?U(c.identifiedBy).nm:'',c.severity||'',c.status||'',c.assignedTo?U(c.assignedTo).nm:'',
+    c.resolution||'',fd(c.resolutionDate),c.comments||'']));
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
+    a.href=u;a.download='conflict-tracker.csv';a.click();URL.revokeObjectURL(u);toast('Conflicts exported')}
+  catch(e){navigator.clipboard?.writeText(csv);toast('Copied to clipboard')}
 }
 
 /* ═══ calendar ══════════════════════════ */

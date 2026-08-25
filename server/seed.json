@@ -1,5 +1,6 @@
 {
   "uid": 200,
+  "conflicts": [],
   "users": [
     {"id":"U1","nm":"Meera Krishnan","em":"meera.k@corp.example","role":"Admin","resp":"System administration","comp":["C1","C2","C3"],"active":true},
     {"id":"U2","nm":"Rajesh Kumar","em":"rajesh.k@corp.example","role":"Release Management","resp":"Release owner — Orders, Billing","comp":["C1","C2"],"active":true},

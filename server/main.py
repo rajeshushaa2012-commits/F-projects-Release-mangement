@@ -23,7 +23,7 @@ DB_PATH = DATA_DIR / "relay.db"
 SEED_PATH = BASE / "seed.json"
 HTML_PATH = BASE.parent / "index.html"
 
-STATE_KEYS = ["uid", "users", "comps", "groups", "rels", "apps_", "notifs", "acts", "audit", "tmpl"]
+STATE_KEYS = ["uid", "users", "comps", "groups", "rels", "apps_", "notifs", "acts", "audit", "tmpl", "conflicts"]
 
 SESSION_COOKIE = "relay_session"
 SESSION_LIFETIME = timedelta(hours=12)
@@ -187,12 +187,16 @@ def require_release_view(user: dict = Depends(get_current_user)):
 
 
 def require_release_edit(user: dict = Depends(get_current_user)):
-    # The release data model is still one whole-state blob (Phase 3 will split
-    # it into real create/edit/delete endpoints), so for now any one of the
-    # three release-editing permissions is accepted as "can save release state".
-    editing_perms = {"create_release", "edit_release", "delete_release"}
+    # Releases AND conflicts both still live in one whole-state blob (a future
+    # phase will split them into real per-entity endpoints), so for now any
+    # one of these write permissions is accepted as "can save this blob".
+    editing_perms = {
+        "create_release", "edit_release", "delete_release",
+        "create_conflict", "edit_conflict", "delete_conflict",
+        "upload_files",
+    }
     if not user["is_admin"] and not (editing_perms & set(user["permissions"])):
-        raise HTTPException(status_code=403, detail="missing permission: create_release, edit_release or delete_release")
+        raise HTTPException(status_code=403, detail="missing permission: none of your permissions allow saving changes")
     return user
 
 
