@@ -2,6 +2,7 @@ import json
 import os
 import secrets
 import smtplib
+import socket
 import sqlite3
 from email.mime.text import MIMEText
 from email.utils import formataddr
@@ -124,11 +125,23 @@ def send_email(payload: EmailPayload, x_access_key: str | None = Header(default=
     msg["From"] = formataddr((SMTP_FROM_NAME, SMTP_USER))
     msg["To"] = ", ".join(to_addrs)
 
+    orig_getaddrinfo = socket.getaddrinfo
+
+    def ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        # Some hosts (e.g. Render's free tier) have no outbound IPv6 route, but
+        # Gmail's DNS returns an IPv6 address first, causing "Network unreachable"
+        # before a v4 fallback is tried. Force IPv4 resolution for this connection.
+        return orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(SMTP_USER, to_addrs, msg.as_string())
+        socket.getaddrinfo = ipv4_only_getaddrinfo
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASS)
+                server.sendmail(SMTP_USER, to_addrs, msg.as_string())
+        finally:
+            socket.getaddrinfo = orig_getaddrinfo
     except smtplib.SMTPAuthenticationError as e:
         reason = e.smtp_error.decode("utf-8", "ignore") if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
         raise HTTPException(status_code=502, detail=f"Gmail rejected the login (code {e.smtp_code}): {reason}")
