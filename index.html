@@ -912,7 +912,8 @@ function vRel(){
   const acts_=canEdit()?`
     ${gate&&!oa?`<button class="bt p" ${reqOk?'':'disabled'} onclick="mApprove('${r.id}','${r.cur}')">Send for ${r.cur==='uat'?'business':'production'} approval</button>`:''}
     ${advOk?`<button class="bt ${gate?'':'p'}" onclick="advance('${r.id}')">Move to ${SL(STAGES[ci+1].k)}</button>`:''}
-    ${ci>0?`<button class="bt d" onclick="mReturn('${r.id}')">Return to earlier gate</button>`:''}`:'';
+    ${ci>0?`<button class="bt d" onclick="mReturn('${r.id}')">Return to earlier gate</button>`:''}
+    ${hasPerm('delete_release')?`<button class="bt d" onclick="mDelRelease('${r.id}')">Delete release</button>`:''}`:'';
 
   const rail=`<div class="c sec"><div class="h"><h3>Gate progress</h3>
     <div class="r">${stt(stageState(r,r.cur))}</div></div><div class="b">
@@ -1451,6 +1452,23 @@ function doNew(){
     milestones:blankMilestones()};
   rels.unshift(r);logAudit('Created release',r.id,'—','Grooming session');
   shut();openR(r.id);toast('Release created');persist();
+}
+function mDelRelease(rid){
+  const r=R(rid);
+  show(`<div class="h"><h3>Delete ${E(r.nm)}?</h3><p>${r.ref} · This removes the release, its milestones, approval history and notes. This cannot be undone.</p></div>
+  <div class="b"><p style="color:var(--ink2);font-size:13.5px">Type the release reference to confirm: <b>${r.ref}</b></p>
+    <input id="del-confirm" placeholder="${r.ref}" style="margin-top:10px">
+    <div class="er" id="e-del">Type the reference exactly to confirm.</div></div>
+  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
+    <button class="bt d" onclick="doDelRelease('${rid}')">Delete release</button></div>`);
+}
+function doDelRelease(rid){
+  const r=R(rid);
+  const v=document.getElementById('del-confirm').value.trim();
+  if(v!==r.ref){document.getElementById('e-del').classList.add('on');return}
+  rels=rels.filter(x=>x.id!==rid);
+  logAudit('Deleted release',null,r.ref,'—');
+  shut();go('rels');toast(`${r.ref} deleted`);persist();
 }
 function mPull(){
   show(`<div class="h"><h3>Record a pull or applied change</h3><p>Every other active owner is alerted immediately.</p></div>
