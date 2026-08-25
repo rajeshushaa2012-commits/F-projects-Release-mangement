@@ -839,7 +839,7 @@ function vDash(){
   const conflictsByObjType=countBy(conflicts,c=>c.objectType||'Unspecified').slice(0,8);
   const att=[];
   apps_.filter(a=>a.status==='open'&&a.esc).forEach(a=>att.push([`Approval overdue — ${R(a.rel).ref}`,`${SL(a.stage)} has passed the escalation threshold`,a.rel]));
-  rels.filter(r=>stageState(r,r.cur)==='rejected').forEach(r=>att.push([`Rejected at ${SL(r.cur)} — ${r.ref}`,E(r.nm),r.id]));
+  rels.filter(r=>stageState(r,r.cur)==='rejected').forEach(r=>att.push([`Rejected at ${SL(r.cur)} — ${r.ref}`,r.nm,r.id]));
   acts.filter(v=>C(v.comp).owners.includes(me)&&v.by!==me&&!v.ack.includes(me))
       .forEach(v=>att.push([`${U(v.by).nm} pulled changes on ${C(v.comp).nm}`,'Take the latest before continuing',null]));
   const up=rels.filter(r=>r.plan&&r.cur!=='done').sort((a,b)=>a.plan.localeCompare(b.plan)).slice(0,5);
@@ -880,7 +880,7 @@ function vDash(){
 
   ${att.length?`<div class="sec"><div class="c"><div class="h"><h3>Immediate attention</h3>
     <div class="r"><span class="tag">${att.length} item${att.length!==1?'s':''}</span></div></div><div class="b flush">
-    ${att.map(a=>`<div class="li hot"><div class="gr"><div class="t">${a[0]}</div><div class="d">${a[1]}</div></div>
+    ${att.map(a=>`<div class="li hot"><div class="gr"><div class="t">${E(a[0])}</div><div class="d">${E(a[1])}</div></div>
       ${a[2]?`<button class="bt s" onclick="openR('${a[2]}')">Open</button>`:''}</div>`).join('')}
   </div></div></div>`:''}
 
@@ -1313,13 +1313,13 @@ function mEditConflict(id){
     <div><label>Status</label><select id="cf-status" ${canWrite?'':'disabled'}>${CF_STATUSES.map(t=>`<option ${c.status===t?'selected':''}>${t}</option>`).join('')}</select></div>
     <div><label>Assigned To</label><select id="cf-assigned" ${canWrite?'':'disabled'}><option value="">— none —</option>
       ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${c.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
-    <div><label>Identified date</label><input type="date" id="cf-iddate" value="${c.identifiedDate||''}" ${canWrite?'':'disabled'}></div>
+    <div><label>Identified date</label><input type="date" id="cf-iddate" value="${E(c.identifiedDate||'')}" ${canWrite?'':'disabled'}></div>
   </div>
   <div style="margin-top:16px"><label>Summary</label><input id="cf-summary" value="${E(c.summary)}" ${canWrite?'':'disabled'}></div>
   <div style="margin-top:14px"><label>Conflict description</label><textarea id="cf-desc" rows="3" ${canWrite?'':'disabled'}>${E(c.description||'')}</textarea></div>
   <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
     <div style="font-family:var(--d);font-weight:600;font-size:13px;margin-bottom:12px">Resolution</div>
-    <div class="fg"><div><label>Resolution date</label><input type="date" id="cf-resdate" value="${c.resolutionDate||''}" ${canWrite?'':'disabled'}></div></div>
+    <div class="fg"><div><label>Resolution date</label><input type="date" id="cf-resdate" value="${E(c.resolutionDate||'')}" ${canWrite?'':'disabled'}></div></div>
     <div style="margin-top:12px"><label>Resolution</label><textarea id="cf-res" rows="2" ${canWrite?'':'disabled'}>${E(c.resolution||'')}</textarea></div>
   </div>
   <div style="margin-top:14px"><label>Comments</label><textarea id="cf-comments" rows="2" ${canWrite?'':'disabled'}>${E(c.comments||'')}</textarea></div>
@@ -1523,16 +1523,17 @@ function mFileDetail(id){
     <div class="k">Linked conflicts</div><div>${linked.length?linked.map(c=>`<div>${E(c.id)} — ${E(c.summary)}</div>`).join(''):'None found for this object name'}</div>
   </div></div>
   <div class="f">
-    ${hasPerm('upload_files')?`<button class="bt s" onclick="mNewVersion('${f.object_name||''}','${f.object_type||''}')">New version</button>`:''}
+    ${hasPerm('upload_files')?`<button class="bt s" onclick="mNewVersion(${f.id})">New version</button>`:''}
     ${hasPerm('download_files')?`<button class="bt p" onclick="downloadFile(${f.id})">Download</button>`:''}
     <button class="bt" onclick="shut()">Close</button>
   </div>`);
 }
-function mNewVersion(objName,objType){
+function mNewVersion(id){
+  const f=files.find(x=>x.id===id);if(!f)return;
   shut();mUploadFile();
-  document.getElementById('uf-oname').value=objName;
-  document.getElementById('uf-otype').value=objType;
-  if(objType==='FMB')document.getElementById('uf-formname-wrap').style.display='block';
+  document.getElementById('uf-oname').value=f.object_name||'';
+  document.getElementById('uf-otype').value=f.object_type||'';
+  if(f.object_type==='FMB')document.getElementById('uf-formname-wrap').style.display='block';
 }
 function downloadFile(id){window.open(`/api/files/${id}/download`,'_blank')}
 function mDelFile(id){
@@ -1814,7 +1815,7 @@ function doReturn(rid){
 function mDate(rid){
   const r=R(rid);
   show(`<div class="h"><h3>Planned production date</h3><p>Required before production approval can be requested.</p></div>
-  <div class="b"><label>Date</label><input type="date" id="pd" value="${r.plan||''}">
+  <div class="b"><label>Date</label><input type="date" id="pd" value="${E(r.plan||'')}">
     <div class="er" id="e-pd">Choose a date.</div></div>
   <div class="f"><button class="bt" onclick="shut()">Cancel</button>
     <button class="bt p" onclick="doDate('${rid}')">Save date</button></div>`);
@@ -1873,15 +1874,15 @@ function mEditMilestone(rid,key){
       ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${m.owner===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
     <div><label>Status</label><select id="m-status">
       ${['notStarted','inProgress','completed','blocked'].map(k=>`<option value="${k}" ${m.status===k?'selected':''}>${STATES[k][0]}</option>`).join('')}</select></div>
-    <div><label>Ideal date</label><input type="date" id="m-ideal" value="${m.ideal||''}"></div>
-    <div><label>Actual date</label><input type="date" id="m-actual" value="${m.actual||''}"></div>
+    <div><label>Ideal date</label><input type="date" id="m-ideal" value="${E(m.ideal||'')}"></div>
+    <div><label>Actual date</label><input type="date" id="m-actual" value="${E(m.actual||'')}"></div>
   </div>
   ${c.approval?`<div class="fg" style="margin-top:14px">
     <div><label>Approved</label><select id="m-approved">
       <option value="0" ${!m.approved?'selected':''}>Not approved</option>
       <option value="1" ${m.approved?'selected':''}>Approved</option></select></div>
     <div><label>Approved by</label><input id="m-approvedby" value="${E(m.approvedBy||'')}"></div>
-    <div><label>Approved on</label><input type="date" id="m-approvedon" value="${m.approvedOn||''}"></div>
+    <div><label>Approved on</label><input type="date" id="m-approvedon" value="${E(m.approvedOn||'')}"></div>
   </div>`:''}
   <div style="margin-top:14px"><label>Comments</label><textarea id="m-comments" rows="3">${E(m.comments||'')}</textarea></div>
   </div>
