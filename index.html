@@ -805,11 +805,38 @@ function helpCard(){
 function dismissHelp(){localStorage.setItem('relayHelpDismissed','1');draw()}
 
 /* ═══ dashboard ═════════════════════════ */
+function miniBarList(rows,emptyMsg){
+  if(!rows.length)return `<p style="color:var(--mut);font-size:13px">${emptyMsg||'No data yet.'}</p>`;
+  const max=Math.max(1,...rows.map(r=>r[1]));
+  return rows.map(([label,count])=>`
+    <div style="margin-bottom:11px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px">
+        <span style="color:var(--ink2)">${E(label)}</span><span class="mono" style="color:var(--mut)">${count}</span>
+      </div>
+      <div style="background:var(--sunk);border-radius:4px;height:6px;overflow:hidden">
+        <div style="background:var(--go);height:100%;width:${Math.max(4,count/max*100)}%"></div>
+      </div>
+    </div>`).join('');
+}
+function countBy(arr,keyFn){
+  const m=new Map();
+  arr.forEach(x=>{const k=keyFn(x);if(k==null)return;m.set(k,(m.get(k)||0)+1)});
+  return[...m.entries()].sort((a,b)=>b[1]-a[1]);
+}
 function vDash(){
   const inprog=rels.filter(r=>r.cur!=='done').length;
   const waiting=apps_.filter(a=>a.status==='open').length;
   const uatP=apps_.filter(a=>a.status==='open'&&a.stage==='uat').length;
   const prodP=apps_.filter(a=>a.status==='open'&&a.stage==='prod').length;
+  const totalRels=rels.length;
+  const releasesInUAT=rels.filter(r=>r.cur==='uat').length;
+  const scheduledForProd=rels.filter(r=>r.cur==='prod').length;
+  const upcomingCount=rels.filter(r=>r.plan&&r.cur!=='done').length;
+  const openConflicts=conflicts.filter(c=>c.status==='Open').length;
+  const criticalConflicts=conflicts.filter(c=>c.severity==='Critical'&&c.status!=='Closed').length;
+  const byDeveloper=countBy(rels,r=>r.owner?U(r.owner).nm:null).slice(0,8);
+  const byComponent=countBy(rels,r=>C(r.comp).nm).slice(0,8);
+  const conflictsByObjType=countBy(conflicts,c=>c.objectType||'Unspecified').slice(0,8);
   const att=[];
   apps_.filter(a=>a.status==='open'&&a.esc).forEach(a=>att.push([`Approval overdue — ${R(a.rel).ref}`,`${SL(a.stage)} has passed the escalation threshold`,a.rel]));
   rels.filter(r=>stageState(r,r.cur)==='rejected').forEach(r=>att.push([`Rejected at ${SL(r.cur)} — ${r.ref}`,E(r.nm),r.id]));
@@ -827,6 +854,29 @@ function vDash(){
     <div class="stat"><div class="l">Production pending</div><div class="n">${prodP}</div><div class="h">awaiting go-live decision</div></div>
     <div class="stat"><div class="l">Needs attention</div><div class="n ${att.length?'s':'g'}">${att.length}</div><div class="h">${att.length?'flagged now':'all clear'}</div></div>
   </div></div>
+
+  <div class="sec"><div class="stats">
+    <div class="stat"><div class="l">Total releases</div><div class="n">${totalRels}</div><div class="h">all time</div></div>
+    <div class="stat"><div class="l">Upcoming</div><div class="n">${upcomingCount}</div><div class="h">have a planned date</div></div>
+    <div class="stat"><div class="l">In business approval</div><div class="n">${releasesInUAT}</div><div class="h">at that gate now</div></div>
+    <div class="stat"><div class="l">Scheduled for production</div><div class="n">${scheduledForProd}</div><div class="h">at that gate now</div></div>
+    <div class="stat"><div class="l">Open conflicts</div><div class="n ${openConflicts?'w':'g'}">${openConflicts}</div><div class="h">${hasPerm('view_conflicts')?'in Conflict Tracker':'—'}</div></div>
+    <div class="stat"><div class="l">Critical conflicts</div><div class="n ${criticalConflicts?'s':'g'}">${criticalConflicts}</div><div class="h">${criticalConflicts?'unresolved':'none open'}</div></div>
+  </div></div>
+
+  <div class="sec grid">
+    <div class="c"><div class="h"><h3>Releases by developer</h3></div><div class="b">
+      ${miniBarList(byDeveloper,'No releases have an assigned developer yet.')}
+    </div></div>
+    <div>
+      <div class="c sec"><div class="h"><h3>Releases by team</h3></div><div class="b">
+        ${miniBarList(byComponent)}
+      </div></div>
+    </div>
+  </div>
+  ${hasPerm('view_conflicts')?`<div class="sec c"><div class="h"><h3>Conflicts by object type</h3></div><div class="b">
+    ${miniBarList(conflictsByObjType,'No conflicts recorded yet.')}
+  </div></div>`:''}
 
   ${att.length?`<div class="sec"><div class="c"><div class="h"><h3>Immediate attention</h3>
     <div class="r"><span class="tag">${att.length} item${att.length!==1?'s':''}</span></div></div><div class="b flush">
