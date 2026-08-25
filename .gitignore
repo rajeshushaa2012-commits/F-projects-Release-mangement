@@ -3,5 +3,6 @@ server/relay.db
 server/relay.db-journal
 server/__pycache__/
 server/server.log
+server/uploads/
 **/__pycache__/
 *.pyc

@@ -1,13 +1,14 @@
 import json
 import os
 import sqlite3
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 try:
@@ -22,6 +23,19 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATA_DIR / "relay.db"
 SEED_PATH = BASE / "seed.json"
 HTML_PATH = BASE.parent / "index.html"
+
+UPLOAD_DIR = DATA_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# Whitelist-only: anything not explicitly Oracle/dev-source related is rejected,
+# regardless of what the browser claims the content-type is. No executables.
+ALLOWED_UPLOAD_EXTENSIONS = {
+    "fmb",                                                    # Oracle Forms
+    "rdf", "rep",                                              # Oracle Reports
+    "sql",                                                     # SQL
+    "pls", "plb", "pkb", "pks", "prc", "fnc", "trg", "typ",    # PL/SQL
+    "xml", "txt", "ctl", "java", "sh",                         # common dev/source files
+}
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
 STATE_KEYS = ["uid", "users", "comps", "groups", "rels", "apps_", "notifs", "acts", "audit", "tmpl", "conflicts"]
 
@@ -88,6 +102,25 @@ def get_conn():
         "expires_at TEXT NOT NULL)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS files ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "original_name TEXT NOT NULL, "
+        "stored_name TEXT NOT NULL, "
+        "file_type TEXT, "
+        "object_type TEXT, "
+        "object_name TEXT, "
+        "form_name TEXT, "
+        "version TEXT, "
+        "rel_id TEXT, "
+        "jira TEXT, "
+        "environment TEXT, "
+        "description TEXT, "
+        "status TEXT NOT NULL DEFAULT 'Active', "
+        "size_bytes INTEGER, "
+        "uploaded_by TEXT, "
+        "uploaded_at TEXT NOT NULL)"
+    )
     return conn
 
 
@@ -549,6 +582,107 @@ def send_email(payload: EmailPayload, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=502, detail=f"Brevo rejected the email ({resp.status_code}): {resp.text}")
 
     return {"ok": True, "sent": len(to_addrs)}
+
+
+def row_to_file(row):
+    d = dict(row)
+    d.pop("stored_name", None)  # internal storage detail, not exposed to clients
+    return d
+
+
+@app.get("/api/files")
+def list_files(user: dict = Depends(get_current_user)):
+    if not user["is_admin"] and not ({"upload_files", "download_files"} & set(user["permissions"])):
+        raise HTTPException(status_code=403, detail="missing permission: upload_files or download_files")
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("SELECT * FROM files ORDER BY id DESC").fetchall()
+        return [row_to_file(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/files/upload")
+async def upload_file(
+    file: UploadFile,
+    object_type: str = Form(""),
+    object_name: str = Form(""),
+    form_name: str = Form(""),
+    version: str = Form(""),
+    rel_id: str = Form(""),
+    jira: str = Form(""),
+    environment: str = Form(""),
+    description: str = Form(""),
+    user: dict = Depends(require_permission("upload_files")),
+):
+    ext = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'.{ext}' files are not allowed. Allowed types: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}",
+        )
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail=f"File too large — max {MAX_UPLOAD_BYTES // (1024*1024)} MB")
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    stored_name = f"{uuid.uuid4().hex}.{ext}"
+    # Written exactly as received — never parsed, transcoded, or otherwise
+    # modified, so the original Oracle object is never corrupted.
+    (UPLOAD_DIR / stored_name).write_bytes(contents)
+
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        cur = conn.execute(
+            "INSERT INTO files (original_name, stored_name, file_type, object_type, object_name, form_name, "
+            "version, rel_id, jira, environment, description, status, size_bytes, uploaded_by, uploaded_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,'Active',?,?,?)",
+            (file.filename, stored_name, ext, object_type, object_name, form_name, version,
+             rel_id or None, jira, environment, description, len(contents), user["username"], now),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM files WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return row_to_file(row)
+    finally:
+        conn.close()
+
+
+@app.get("/api/files/{file_id}/download")
+def download_file(file_id: int, user: dict = Depends(require_permission("download_files"))):
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT original_name, stored_name FROM files WHERE id = ?", (file_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="file not found")
+        original_name, stored_name = row
+        path = UPLOAD_DIR / stored_name
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="file content is missing on the server")
+        return FileResponse(path, filename=original_name, media_type="application/octet-stream")
+    finally:
+        conn.close()
+
+
+@app.delete("/api/files/{file_id}")
+def delete_file(file_id: int, user: dict = Depends(require_admin)):
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT stored_name FROM files WHERE id = ?", (file_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="file not found")
+        conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+        conn.commit()
+        try:
+            (UPLOAD_DIR / row[0]).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return {"ok": True}
+    finally:
+        conn.close()
 
 
 @app.get("/healthz")
