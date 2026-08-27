@@ -535,11 +535,14 @@ def get_state(user: dict = Depends(require_release_view)):
 LOCKED_RELEASE_CATEGORIES = {"new_release", "bms"}
 
 
-def enforce_release_locks(conn, incoming: dict):
-    """New Release and BMS Release are read-only for non-admins, enforced here
-    (not just hidden in the UI) since releases still share one whole-state
-    save endpoint. Admins are exempt — they're the only ones who can create
-    or edit records in those two categories at all."""
+def enforce_release_locks(conn, user: dict, incoming: dict):
+    """New Release and BMS Release are read-only for everyone, Admin included,
+    once a record exists — enforced here (not just hidden in the UI) since
+    releases still share one whole-state save endpoint. This check always
+    runs, with no admin bypass: editing or deleting an existing record in a
+    locked category is rejected regardless of who's asking. Admin's only
+    remaining privilege is creating a brand-new record in one of these
+    categories in the first place."""
     row = conn.execute("SELECT data FROM state WHERE id = 1").fetchone()
     old_rels = {r["id"]: r for r in json.loads(row[0])["rels"]} if row else {}
     new_rels = {r["id"]: r for r in incoming.get("rels", [])}
@@ -552,10 +555,11 @@ def enforce_release_locks(conn, incoming: dict):
                 )
     for rid, new_r in new_rels.items():
         if rid not in old_rels and new_r.get("category") in LOCKED_RELEASE_CATEGORIES:
-            raise HTTPException(
-                status_code=403,
-                detail="Only an Admin can create records in New Release or BMS Release.",
-            )
+            if not user["is_admin"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only an Admin can create records in New Release or BMS Release.",
+                )
 
 
 @app.put("/api/state")
@@ -566,8 +570,7 @@ async def put_state(request: Request, user: dict = Depends(require_release_edit)
         raise HTTPException(status_code=400, detail=f"missing keys: {missing}")
     conn = get_conn()
     try:
-        if not user["is_admin"]:
-            enforce_release_locks(conn, body)
+        enforce_release_locks(conn, user, body)
         conn.execute(
             "INSERT INTO state (id, data, updated_at) VALUES (1, ?, datetime('now')) "
             "ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",

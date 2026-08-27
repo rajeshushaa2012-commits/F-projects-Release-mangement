@@ -471,10 +471,15 @@ let authUser=null;
 const hasPerm=k=>!!authUser&&(authUser.is_admin||authUser.permissions.includes(k));
 const canEdit=()=>hasPerm('create_release')||hasPerm('edit_release')||hasPerm('delete_release');
 const isAdmin=()=>!!authUser&&authUser.is_admin;
-// New Release and BMS Release are read-only for everyone except Admin, even
-// for users who otherwise have release-edit permission — mirrors the
-// server-side check in enforce_release_locks() in main.py.
-const canEditRelease=r=>canEdit()&&(RC(r.category).editable||isAdmin());
+// New Release and BMS Release are read-only for everyone, Admin included —
+// once a record exists in a locked category it cannot be edited, deleted,
+// or have its milestones/approvals/dates/comments changed by anyone.
+// Mirrors the unconditional server-side check in enforce_release_locks()
+// in main.py. Admin's one remaining privilege there is creating brand-new
+// records in these categories (see canCreateRelease below) — not editing
+// ones that already exist.
+const canEditRelease=r=>canEdit()&&RC(r.category).editable;
+const canCreateRelease=catKey=>hasPerm('create_release')&&(RC(catKey).editable||isAdmin());
 
 /* ═══ helpers ═══════════════════════════ */
 const E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1018,16 +1023,17 @@ function gridColumns(){
 }
 function vReleaseGrid(catKey){
   const cat=RC(catKey);
-  const canEditHere=hasPerm('create_release')&&(cat.editable||isAdmin());
+  const canCreateHere=canCreateRelease(catKey);
+  const canDeleteHere=hasPerm('delete_release')&&cat.editable;
   const all=filteredReleases(catKey);
   const totalPages=Math.max(1,Math.ceil(all.length/REL_PAGE_SIZE));
   if(rflt.page>totalPages)rflt.page=totalPages;
   const pageRows=all.slice((rflt.page-1)*REL_PAGE_SIZE,rflt.page*REL_PAGE_SIZE);
   const cols=gridColumns();
-  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(canEditHere?90:0);
-  return head(cat.view,(canEditHere?`<button class="bt p" onclick="mNew('${catKey}')">New release</button>`:'')+
+  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(canDeleteHere?90:0);
+  return head(cat.view,(canCreateHere?`<button class="bt p" onclick="mNew('${catKey}')">New release</button>`:'')+
     `<button class="bt" onclick="exportReleaseGridCsv('${catKey}')">Export</button>`)+
-    (!cat.editable?`<div class="sec"><div class="mt">This list is read-only${isAdmin()?' for non-admins':''}. ${isAdmin()?'As Admin you can still edit records here.':'Ask an Admin if something needs to change.'}</div></div>`:'')+`
+    (!cat.editable?`<div class="sec"><div class="mt">This list is read-only for everyone, Admin included — records here cannot be edited or deleted once created. ${isAdmin()?'As Admin you can still add new records.':'Ask an Admin if something needs to change.'}</div></div>`:'')+`
   <div class="sec c"><div class="b">
     <div class="fg">
       <div><label>Search</label><input value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
@@ -1043,10 +1049,10 @@ function vReleaseGrid(catKey){
   <div class="c"><div class="b flush">${pageRows.length?`
     <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
     <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
-      ${canEditHere?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
+      ${canDeleteHere?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
     <tbody>${pageRows.map(r=>`<tr class="k" onclick="openR('${r.id}')">
       ${cols.map(c=>`<td style="white-space:nowrap">${c.cell(r)}</td>`).join('')}
-      ${canEditHere?`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()"><button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button></td>`:''}
+      ${canDeleteHere?`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()"><button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button></td>`:''}
     </tr>`).join('')}</tbody></table></div>
     <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?((rflt.page-1)*REL_PAGE_SIZE+1):0}–${(rflt.page-1)*REL_PAGE_SIZE+pageRows.length} of ${all.length}</span>
@@ -1056,7 +1062,7 @@ function vReleaseGrid(catKey){
         <button class="bt s" ${rflt.page>=totalPages?'disabled':''} onclick="rflt.page++;draw()">Next →</button>
       </div>
     </div>`
-    :`<div class="ept"><h4>No releases in ${E(cat.nav)}</h4><p>${canEditHere?'Create one to get started.':'Nothing has been added to this category yet.'}</p></div>`}
+    :`<div class="ept"><h4>No releases in ${E(cat.nav)}</h4><p>${canCreateHere?'Create one to get started.':'Nothing has been added to this category yet.'}</p></div>`}
   </div></div>`;
 }
 function exportReleaseGridCsv(catKey){
