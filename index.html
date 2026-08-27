@@ -547,8 +547,7 @@ const NAV=[
    {k:'relNew',l:'New Release',ic:'🆕',ct:()=>rels.filter(r=>r.category==='new_release').length},
    {k:'relBms',l:'BMS Release',ic:'🏛️',ct:()=>rels.filter(r=>r.category==='bms').length},
    {k:'cal', l:'Release calendar',ic:'📅'},
-   {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>conflicts.filter(c=>c.status==='Open').length},
-   {k:'files',l:'Uploads / Artifacts',ic:'📁',permAny:['upload_files','download_files'],ct:()=>files.length}]},
+   {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>conflicts.filter(c=>c.status==='Open').length}]},
  {g:'Messages',items:[
    {k:'chg', l:'Change activity',ic:'🔔',ct:unackCount,alert:1},
    {k:'mail',l:'Compose email',ic:'✉️'},
@@ -581,7 +580,7 @@ function drawNav(){
     <button class="bt s" onclick="go('mypw')">Change password</button>
     <button class="bt s" onclick="doLogout()">Logout</button>`:'';
 }
-function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();if(k==='files'||k==='cft')loadFiles();draw();window.scrollTo(0,0)}
+function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();if(k==='cft')loadFiles();draw();window.scrollTo(0,0)}
 function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
 
 /* ═══ router ════════════════════════════ */
@@ -592,7 +591,6 @@ const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'
  relBms:['BMS Release','Read-only master/reference release — same columns as the others.'],
  rel:['Release detail',''],cal:['Release calendar','Planned production releases by date.'],
  cft:['Conflict Tracker','Track conflicts between releases and development changes.'],
- files:['Uploads / Artifacts','Oracle development objects — forms, reports, SQL and PL/SQL.'],
  chg:['Change activity','Who pulled or applied changes, and who was told.'],
  mail:['Compose email','Send a one-off message to any address, right now.'],
  note:['Notification history','Every message the application has sent.'],
@@ -618,10 +616,6 @@ function draw(){
   if(view==='cft'){
     if(!hasPerm('view_conflicts')){v.innerHTML=vRO('You need the view_conflicts permission to see this page.');return}
     v.innerHTML=vConflicts();return;
-  }
-  if(view==='files'){
-    if(!hasPerm('upload_files')&&!hasPerm('download_files')){v.innerHTML=vRO('You need the upload_files or download_files permission to see this page.');return}
-    v.innerHTML=vFiles();return;
   }
   if(!hasPerm('view_releases')){v.innerHTML=vRO('You need the view_releases permission to see this page.');return}
   if(view==='relMy'){v.innerHTML=vReleaseGrid('my_team');return}
@@ -1458,26 +1452,10 @@ function exportConflictsCsv(){
   catch(e){navigator.clipboard?.writeText(csv);toast('Copied to clipboard')}
 }
 
-/* ═══ uploads / artifacts ═══════════════ */
-let fflt={objType:'all',rel:'all',env:'all',q:''};
-function setFF(k,v){fflt[k]=v;draw()}
-function clearFF(){fflt={objType:'all',rel:'all',env:'all',q:''};draw()}
+/* ═══ files (conflict attachments only) ══ */
 async function loadFiles(){
   try{const r=await fetch('/api/files',{credentials:'same-origin'});if(r.ok)files=await r.json()}catch(e){}
-  if(view==='files'||view==='cft')draw();
-}
-function filteredFiles(){
-  return files.filter(f=>{
-    if(fflt.objType!=='all'&&f.object_type!==fflt.objType)return false;
-    if(fflt.rel!=='all'&&f.rel_id!==fflt.rel)return false;
-    if(fflt.env!=='all'&&f.environment!==fflt.env)return false;
-    if(fflt.q){
-      const q=fflt.q.toLowerCase();
-      const hay=[f.original_name,f.object_name,f.jira,f.form_name].filter(Boolean).join(' ').toLowerCase();
-      if(!hay.includes(q))return false;
-    }
-    return true;
-  });
+  if(view==='cft')draw();
 }
 function fileSize(n){
   if(n==null)return '—';
@@ -1485,77 +1463,31 @@ function fileSize(n){
   if(n<1024*1024)return (n/1024).toFixed(1)+' KB';
   return (n/1024/1024).toFixed(2)+' MB';
 }
-function vFiles(){
-  const rows=filteredFiles();
-  const totalSize=files.reduce((s,f)=>s+(f.size_bytes||0),0);
-  return head('files',hasPerm('upload_files')?`<button class="bt p" onclick="mUploadFile()">Upload file</button>`:'')+`
-  <div class="sec"><div class="stats">
-    <div class="stat"><div class="l">Total files</div><div class="n">${files.length}</div><div class="h">tracked</div></div>
-    <div class="stat"><div class="l">Total size</div><div class="n" style="font-size:22px">${fileSize(totalSize)}</div><div class="h">stored</div></div>
-    <div class="stat"><div class="l">Showing</div><div class="n">${rows.length}</div><div class="h">match filters</div></div>
-  </div></div>
-
-  <div class="sec c"><div class="b">
-    <div class="fg">
-      <div><label>Search</label><input value="${E(fflt.q)}" placeholder="File name, object name, Jira #"
-        oninput="fflt.q=this.value;clearTimeout(window._ff);window._ff=setTimeout(draw,220)"></div>
-      <div><label>Object Type</label><select onchange="setFF('objType',this.value)"><option value="all">All object types</option>
-        ${OBJECT_TYPES.map(t=>`<option ${fflt.objType===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Team Name</label><select onchange="setFF('rel',this.value)"><option value="all">All releases</option>
-        ${rels.map(r=>`<option value="${r.id}" ${fflt.rel===r.id?'selected':''}>${E(r.nm)}</option>`).join('')}</select></div>
-      <div><label>Environment</label><select onchange="setFF('env',this.value)"><option value="all">All environments</option>
-        ${ENVIRONMENTS.map(t=>`<option ${fflt.env===t?'selected':''}>${t}</option>`).join('')}</select></div>
-    </div>
-    <div style="margin-top:14px"><button class="bt s" onclick="clearFF()">Clear filters</button></div>
-  </div></div>
-
-  <div class="c"><div class="b flush">${rows.length?`<div class="tw"><table>
-    <thead><tr><th>File</th><th>Object Type</th><th>Object Name</th><th>Version</th><th>Team Name</th>
-      <th>Environment</th><th>Uploaded by</th><th>Uploaded</th><th>Size</th><th></th></tr></thead>
-    <tbody>${rows.map(f=>`<tr class="k" onclick="mFileDetail(${f.id})">
-      <td class="tt">${E(f.original_name)}</td>
-      <td><span class="tag">${E(f.object_type||'—')}</span></td>
-      <td>${f.object_name?E(f.object_name):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td class="mono" style="font-size:11.5px">${f.version?E(f.version):'—'}</td>
-      <td>${f.rel_id&&R(f.rel_id)?E(R(f.rel_id).nm):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td>${E(f.environment||'—')}</td>
-      <td>${E(f.uploaded_by||'—')}</td>
-      <td class="mono" style="font-size:12px">${fdt(f.uploaded_at)}</td>
-      <td class="mono" style="font-size:12px">${fileSize(f.size_bytes)}</td>
-      <td style="text-align:right;white-space:nowrap">
-        ${hasPerm('download_files')?`<button class="bt s" onclick="event.stopPropagation();downloadFile(${f.id})">Download</button>`:''}
-        ${isAdmin()?`<button class="bt s d" onclick="event.stopPropagation();mDelFile(${f.id})">Delete</button>`:''}
-      </td>
-    </tr>`).join('')}</tbody></table></div>`
-    :'<div class="ept"><h4>No files uploaded yet</h4><p>Upload Oracle development objects (.fmb, .sql, .pkb and more) to track them here.</p></div>'}
-  </div></div>`;
-}
-let ufConflictId='';
+/* Uploads only happen from within a conflict's edit screen now — there is
+   no standalone file-browsing page, so every upload is tied to a
+   conflict_id and the release-linking/versioning fields that page used
+   to offer are gone. */
 function mUploadFile(opts){
-  opts=opts||{};
-  ufConflictId=opts.conflictId||'';
-  const c=ufConflictId?CF(ufConflictId):null;
-  show(`<div class="h"><h3>Upload file</h3><p>${c?`Attaching to conflict ${c.id}. `:''}Allowed: .fmb, .rdf, .rep, .sql, .pls, .plb, .pkb, .pks, .prc, .fnc, .trg, .typ, .xml, .txt, .ctl, .java, .sh — max 20 MB.</p></div>
+  const conflictId=(opts&&opts.conflictId)||'';
+  const c=conflictId?CF(conflictId):null;
+  if(!c)return;
+  show(`<div class="h"><h3>Upload attachment</h3><p>Attaching to conflict ${c.id}. Allowed: .fmb, .rdf, .rep, .sql, .pls, .plb, .pkb, .pks, .prc, .fnc, .trg, .typ, .xml, .txt, .ctl, .java, .sh — max 20 MB.</p></div>
   <div class="b">
     <label>File</label><input type="file" id="uf-file">
     <div class="er" id="e-uf-file">Choose a file.</div>
     <div class="fg" style="margin-top:14px">
       <div><label>Object Type</label><select id="uf-otype" onchange="document.getElementById('uf-formname-wrap').style.display=this.value==='FMB'?'block':'none'">
-        ${OBJECT_TYPES.map(t=>`<option ${c&&c.objectType===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Object Name</label><input id="uf-oname" placeholder="e.g. CUSTOMER_FORM.fmb" value="${c?E(c.objectName||''):''}"></div>
-      <div><label>Version</label><input id="uf-version" placeholder="e.g. v1.0"></div>
-      ${c?'':`<div><label>Team Name (release)</label><select id="uf-rel"><option value="">— none —</option>
-        ${rels.map(r=>`<option value="${r.id}">${E(r.nm)} (${r.ref})</option>`).join('')}</select></div>
-      <div><label>Jira #</label><input id="uf-jira"></div>`}
-      <div><label>Environment</label><select id="uf-env">${ENVIRONMENTS.map(t=>`<option ${c&&c.environment===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        ${OBJECT_TYPES.map(t=>`<option ${c.objectType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Object Name</label><input id="uf-oname" placeholder="e.g. CUSTOMER_FORM.fmb" value="${E(c.objectName||'')}"></div>
+      <div><label>Environment</label><select id="uf-env">${ENVIRONMENTS.map(t=>`<option ${c.environment===t?'selected':''}>${t}</option>`).join('')}</select></div>
     </div>
     <div id="uf-formname-wrap" style="display:none;margin-top:14px"><label>Form Name (Oracle Forms internal name)</label><input id="uf-formname"></div>
     <div style="margin-top:14px"><label>Description</label><textarea id="uf-desc" rows="2"></textarea></div>
   </div>
   <div class="f"><button class="bt" onclick="shut()">Cancel</button>
-    <button class="bt p" id="uf-submit" onclick="doUploadFile()">Upload</button></div>`);
+    <button class="bt p" id="uf-submit" onclick="doUploadFile('${conflictId}')">Upload</button></div>`);
 }
-async function doUploadFile(){
+async function doUploadFile(conflictId){
   const fileInput=document.getElementById('uf-file');
   if(!fileInput.files.length){document.getElementById('e-uf-file').classList.add('on');return}
   document.getElementById('e-uf-file').classList.remove('on');
@@ -1563,14 +1495,9 @@ async function doUploadFile(){
   fd.append('file',fileInput.files[0]);
   fd.append('object_type',document.getElementById('uf-otype').value);
   fd.append('object_name',document.getElementById('uf-oname').value.trim());
-  fd.append('version',document.getElementById('uf-version').value.trim());
-  const relEl=document.getElementById('uf-rel');
-  fd.append('rel_id',relEl?relEl.value:'');
-  const jiraEl=document.getElementById('uf-jira');
-  fd.append('jira',jiraEl?jiraEl.value.trim():'');
   fd.append('environment',document.getElementById('uf-env').value);
   fd.append('description',document.getElementById('uf-desc').value.trim());
-  fd.append('conflict_id',ufConflictId||'');
+  fd.append('conflict_id',conflictId);
   const fnEl=document.getElementById('uf-formname');
   fd.append('form_name',fnEl?fnEl.value.trim():'');
   const btn=document.getElementById('uf-submit');btn.disabled=true;btn.textContent='Uploading…';
@@ -1580,59 +1507,11 @@ async function doUploadFile(){
     btn.disabled=false;btn.textContent='Upload';
     if(!res.ok){toast(j.detail||'Upload failed');return}
     shut();toast('File uploaded');
-    const cid=ufConflictId;ufConflictId='';
     loadFiles();
-    if(cid)setTimeout(()=>mEditConflict(cid),150);
+    setTimeout(()=>mEditConflict(conflictId),150);
   }catch(e){btn.disabled=false;btn.textContent='Upload';toast('Could not reach the server')}
 }
-function mFileDetail(id){
-  const f=files.find(x=>x.id===id);if(!f)return;
-  const linked=conflicts.filter(c=>f.object_name&&c.objectName&&c.objectName.toLowerCase()===f.object_name.toLowerCase());
-  show(`<div class="h"><h3>${E(f.original_name)}</h3><p>File ID ${f.id}</p></div>
-  <div class="b"><div class="kv">
-    <div class="k">Object Type</div><div>${E(f.object_type||'—')}</div>
-    <div class="k">Object Name</div><div>${E(f.object_name||'—')}</div>
-    ${f.object_type==='FMB'?`<div class="k">Form Name</div><div>${E(f.form_name||'—')}</div>`:''}
-    <div class="k">Version</div><div>${E(f.version||'—')}</div>
-    <div class="k">Team Name</div><div>${f.rel_id&&R(f.rel_id)?E(R(f.rel_id).nm):'—'}</div>
-    <div class="k">Jira #</div><div class="mono" style="font-size:12.5px">${E(f.jira||'—')}</div>
-    <div class="k">Environment</div><div>${E(f.environment||'—')}</div>
-    <div class="k">Status</div><div>${E(f.status||'Active')}</div>
-    <div class="k">Uploaded by</div><div>${E(f.uploaded_by||'—')}</div>
-    <div class="k">Uploaded</div><div class="mono" style="font-size:12.5px">${fdt(f.uploaded_at)}</div>
-    <div class="k">File size</div><div class="mono" style="font-size:12.5px">${fileSize(f.size_bytes)}</div>
-    <div class="k">Description</div><div>${f.description?E(f.description):'—'}</div>
-    <div class="k">Linked conflicts</div><div>${linked.length?linked.map(c=>`<div>${E(c.id)} — ${E(c.summary)}</div>`).join(''):'None found for this object name'}</div>
-  </div></div>
-  <div class="f">
-    ${hasPerm('upload_files')?`<button class="bt s" onclick="mNewVersion(${f.id})">New version</button>`:''}
-    ${hasPerm('download_files')?`<button class="bt p" onclick="downloadFile(${f.id})">Download</button>`:''}
-    <button class="bt" onclick="shut()">Close</button>
-  </div>`);
-}
-function mNewVersion(id){
-  const f=files.find(x=>x.id===id);if(!f)return;
-  shut();mUploadFile();
-  document.getElementById('uf-oname').value=f.object_name||'';
-  document.getElementById('uf-otype').value=f.object_type||'';
-  if(f.object_type==='FMB')document.getElementById('uf-formname-wrap').style.display='block';
-}
 function downloadFile(id){window.open(`/api/files/${id}/download`,'_blank')}
-function mDelFile(id){
-  const f=files.find(x=>x.id===id);if(!f)return;
-  show(`<div class="h"><h3>Delete ${E(f.original_name)}?</h3><p>This permanently removes the file and its metadata. This cannot be undone.</p></div>
-  <div class="b"></div>
-  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
-    <button class="bt d" onclick="doDelFile(${id})">Delete</button></div>`);
-}
-async function doDelFile(id){
-  try{
-    const res=await fetch(`/api/files/${id}`,{method:'DELETE',credentials:'same-origin'});
-    const j=await res.json().catch(()=>({}));
-    if(!res.ok){toast(j.detail||'Could not delete');return}
-    shut();toast('File deleted');loadFiles();
-  }catch(e){toast('Could not reach the server')}
-}
 
 /* ═══ calendar ══════════════════════════ */
 function vCal(){
