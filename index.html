@@ -297,6 +297,18 @@ const MS=key=>MILESTONES.find(m=>m.key===key)||{name:key};
 const blankMilestones=()=>MILESTONES.map(m=>({key:m.key,owner:null,ideal:null,actual:null,
   status:'notStarted',comments:'',approved:false,approvedBy:null,approvedOn:null}));
 
+/* ═══ release categories ═════════════════
+   Three sections sharing identical columns — only edit access differs.
+   My Team Release: editable by Release Team/Admin. New Release and BMS
+   Release: read-only for everyone except Admin, enforced server-side too
+   (see enforce_release_locks in main.py), not just hidden in the UI. */
+const RELEASE_CATEGORIES=[
+ {key:'my_team',    view:'relMy',  nav:'My Team Release', ic:'📦', editable:true},
+ {key:'new_release',view:'relNew', nav:'New Release',      ic:'🆕', editable:false},
+ {key:'bms',         view:'relBms', nav:'BMS Release',      ic:'🏛️', editable:false}
+];
+const RC=key=>RELEASE_CATEGORIES.find(c=>c.key===key)||RELEASE_CATEGORIES[0];
+
 /* ═══ data (loaded from the server — see boot() below) ═══ */
 let uid=200; const nid=p=>p+(++uid);
 
@@ -362,6 +374,7 @@ function applyState(s){
     RELEASE_TEXT_FIELDS.forEach(f=>{if(r[f]===undefined)r[f]=''});
     if(!Array.isArray(r.milestones))r.milestones=blankMilestones();
     else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
+    if(!RELEASE_CATEGORIES.some(c=>c.key===r.category))r.category='my_team';
   });
 }
 function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl,conflicts}}
@@ -455,6 +468,10 @@ let authUser=null;
 const hasPerm=k=>!!authUser&&(authUser.is_admin||authUser.permissions.includes(k));
 const canEdit=()=>hasPerm('create_release')||hasPerm('edit_release')||hasPerm('delete_release');
 const isAdmin=()=>!!authUser&&authUser.is_admin;
+// New Release and BMS Release are read-only for everyone except Admin, even
+// for users who otherwise have release-edit permission — mirrors the
+// server-side check in enforce_release_locks() in main.py.
+const canEditRelease=r=>canEdit()&&(RC(r.category).editable||isAdmin());
 
 /* ═══ helpers ═══════════════════════════ */
 const E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -518,7 +535,9 @@ const NAV=[
  {g:'Overview',items:[
    {k:'dash',l:'Dashboard',ic:'🏠'},
    {k:'mine',l:'My pending actions',ic:'⏳',ct:()=>pendingForMe().length,alert:1},
-   {k:'rels',l:'Releases',ic:'📦',ct:()=>rels.filter(r=>r.cur!=='done').length},
+   {k:'relMy', l:'My Team Release',ic:'📦',ct:()=>rels.filter(r=>r.category==='my_team').length},
+   {k:'relNew',l:'New Release',ic:'🆕',ct:()=>rels.filter(r=>r.category==='new_release').length},
+   {k:'relBms',l:'BMS Release',ic:'🏛️',ct:()=>rels.filter(r=>r.category==='bms').length},
    {k:'cal', l:'Release calendar',ic:'📅'},
    {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>conflicts.filter(c=>c.status==='Open').length},
    {k:'files',l:'Uploads / Artifacts',ic:'📁',permAny:['upload_files','download_files'],ct:()=>files.length}]},
@@ -554,13 +573,15 @@ function drawNav(){
     <button class="bt s" onclick="go('mypw')">Change password</button>
     <button class="bt s" onclick="doLogout()">Logout</button>`:'';
 }
-function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();if(k==='files')loadFiles();draw();window.scrollTo(0,0)}
+function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();if(k==='files'||k==='cft')loadFiles();draw();window.scrollTo(0,0)}
 function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
 
 /* ═══ router ════════════════════════════ */
 const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'],
  mine:['My pending actions','Only the items waiting on you.'],
- rels:['Releases','Every release being tracked, with its current gate.'],
+ relMy:['My Team Release','Editable — every field from Release.xlsx as its own column.'],
+ relNew:['New Release','Read-only reference list — same columns as My Team Release.'],
+ relBms:['BMS Release','Read-only master/reference release — same columns as the others.'],
  rel:['Release detail',''],cal:['Release calendar','Planned production releases by date.'],
  cft:['Conflict Tracker','Track conflicts between releases and development changes.'],
  files:['Uploads / Artifacts','Oracle development objects — forms, reports, SQL and PL/SQL.'],
@@ -595,7 +616,10 @@ function draw(){
     v.innerHTML=vFiles();return;
   }
   if(!hasPerm('view_releases')){v.innerHTML=vRO('You need the view_releases permission to see this page.');return}
-  v.innerHTML=({dash:vDash,mine:vMine,rels:vRels,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
+  if(view==='relMy'){v.innerHTML=vReleaseGrid('my_team');return}
+  if(view==='relNew'){v.innerHTML=vReleaseGrid('new_release');return}
+  if(view==='relBms'){v.innerHTML=vReleaseGrid('bms');return}
+  v.innerHTML=({dash:vDash,mine:vMine,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
     aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
 }
 const head=(k,extra='')=>{const[t,d]=TITLES[k];
@@ -652,24 +676,38 @@ async function loadAccounts(){
   }catch(e){}
   if(view==='accts')draw();
 }
+// The 12-permission checkbox UI is gone (per request) — every account is now
+// simply Admin, Release Team (edit access), or Developer (view-only). The
+// backend still stores individual permission keys (kept flexible for later),
+// these presets are just what the simplified UI writes/reads.
+const ROLE_PRESETS={
+  'Release Team':['view_releases','create_release','edit_release','delete_release',
+    'view_conflicts','create_conflict','edit_conflict','delete_conflict','upload_files','download_files'],
+  'Developer':['view_releases','view_conflicts','download_files']
+};
+function roleForAccount(a){
+  if(a.is_admin)return'Admin';
+  const perms=new Set(a.permissions);
+  if(ROLE_PRESETS['Release Team'].every(p=>perms.has(p)))return'Release Team';
+  if(ROLE_PRESETS['Developer'].every(p=>perms.has(p))&&perms.size<=ROLE_PRESETS['Developer'].length)return'Developer';
+  return'Custom';
+}
 function vAccts(){
   return head('accts',`<button class="bt p" onclick="mNewAccount()">Add user</button>`)+`
   <div class="c"><div class="b flush"><div class="tw"><table>
-    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Admin</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
     <tbody>${accounts.length?accounts.map(a=>`<tr>
       <td class="tt">${E(a.name)}</td>
       <td class="mono" style="font-size:11.5px">${E(a.username)}</td>
       <td class="mono" style="font-size:11.5px;color:var(--mut)">${E(a.email||'—')}</td>
-      <td>${a.is_admin?'<span class="tick">✓ Admin</span>':'<span style="color:var(--mut2)">—</span>'}</td>
-      <td style="font-size:11.5px;color:var(--mut);max-width:220px">${a.is_admin?'All (Admin)':(a.permissions.length?a.permissions.map(p=>E(p)).join(', '):'None')}</td>
+      <td>${a.is_admin?'<span class="tick">✓ Admin</span>':`<span class="tag">${E(roleForAccount(a))}</span>`}</td>
       <td>${a.active?'<span class="stt s-ok"><i></i>Active</span>':'<span class="stt s-none"><i></i>Inactive</span>'}</td>
       <td style="text-align:right;white-space:nowrap">
         <button class="bt s" onclick="mEditAccount(${a.id})">Edit</button>
         <button class="bt s" onclick="mResetAccountPassword(${a.id})">Reset password</button>
-        ${!a.is_admin?`<button class="bt s" onclick="mAccountPermissions(${a.id})">Permissions</button>`:''}
         <button class="bt s" onclick="toggleAccountActive(${a.id},${!a.active})">${a.active?'Deactivate':'Activate'}</button>
       </td>
-    </tr>`).join(''):'<tr><td colspan="7" style="padding:24px;color:var(--mut);text-align:center">Loading…</td></tr>'}
+    </tr>`).join(''):'<tr><td colspan="6" style="padding:24px;color:var(--mut);text-align:center">Loading…</td></tr>'}
     </tbody></table></div></div></div>`;
 }
 function mNewAccount(){
@@ -680,12 +718,12 @@ function mNewAccount(){
     <div><label>Password</label><input id="na-pw" type="password"><div class="er" id="e-na-pw">At least 6 characters.</div></div>
     <div><label>Confirm password</label><input id="na-pw2" type="password"><div class="er" id="e-na-pw2">Passwords must match.</div></div>
     <div><label>Email (optional)</label><input id="na-email"></div>
-    ${isAdmin()?`<div><label>Admin access</label><select id="na-admin"><option value="0">No — normal user</option><option value="1">Yes — full Admin</option></select></div>`:''}
-  </div>
-  <div style="margin-top:16px"><label>Permissions</label><div class="chips" id="na-perms">
-    ${permissionsCatalog.map(p=>`<label class="chip" style="cursor:pointer"><input type="checkbox" value="${p.key}" style="margin-right:6px">${E(p.label)}</label>`).join('')}
+    <div><label>Role</label><select id="na-role">
+      <option value="Developer">Developer — view only</option>
+      <option value="Release Team">Release Team — can edit</option>
+      ${isAdmin()?'<option value="Admin">Admin — full access</option>':''}
+    </select></div>
   </div></div>
-  </div>
   <div class="f"><button class="bt" onclick="shut()">Cancel</button>
     <button class="bt p" onclick="doNewAccount()">Create user</button></div>`);
 }
@@ -694,9 +732,9 @@ async function doNewAccount(){
   const username=document.getElementById('na-user').value.trim();
   const pw=document.getElementById('na-pw').value,pw2=document.getElementById('na-pw2').value;
   const email=document.getElementById('na-email').value.trim()||null;
-  const isAdminEl=document.getElementById('na-admin');
-  const isAdminFlag=isAdminEl?isAdminEl.value==='1':false;
-  const perms=[...document.querySelectorAll('#na-perms input:checked')].map(i=>i.value);
+  const role=document.getElementById('na-role').value;
+  const isAdminFlag=role==='Admin';
+  const perms=ROLE_PRESETS[role]||[];
   ['e-na-name','e-na-user','e-na-pw','e-na-pw2'].forEach(id=>document.getElementById(id).classList.remove('on'));
   let bad=false;
   if(!name){document.getElementById('e-na-name').classList.add('on');bad=true}
@@ -714,13 +752,16 @@ async function doNewAccount(){
 }
 function mEditAccount(id){
   const a=accounts.find(x=>x.id===id);if(!a)return;
+  const currentRole=roleForAccount(a);
   show(`<div class="h"><h3>Edit ${E(a.name)}</h3></div>
   <div class="b"><div class="fg">
     <div><label>Name</label><input id="ea-name" value="${E(a.name)}"></div>
     <div><label>Email</label><input id="ea-email" value="${E(a.email||'')}"></div>
-    ${isAdmin()?`<div><label>Admin access</label><select id="ea-admin">
-      <option value="0" ${!a.is_admin?'selected':''}>No — normal user</option>
-      <option value="1" ${a.is_admin?'selected':''}>Yes — full Admin</option></select></div>`:''}
+    ${isAdmin()?`<div><label>Role</label><select id="ea-role">
+      <option value="Developer" ${currentRole==='Developer'?'selected':''}>Developer — view only</option>
+      <option value="Release Team" ${currentRole==='Release Team'?'selected':''}>Release Team — can edit</option>
+      <option value="Admin" ${currentRole==='Admin'?'selected':''}>Admin — full access</option>
+    </select></div>`:''}
   </div></div>
   <div class="f"><button class="bt" onclick="shut()">Cancel</button>
     <button class="bt p" onclick="doEditAccount(${id})">Save</button></div>`);
@@ -728,14 +769,19 @@ function mEditAccount(id){
 async function doEditAccount(id){
   const name=document.getElementById('ea-name').value.trim();
   const email=document.getElementById('ea-email').value.trim()||null;
-  const adminEl=document.getElementById('ea-admin');
-  const body={name,email};
-  if(adminEl)body.is_admin=adminEl.value==='1';
+  const roleEl=document.getElementById('ea-role');
+  const role=roleEl?roleEl.value:null;
   if(!name){toast('Name is required');return}
   try{
+    const body={name,email};
+    if(role)body.is_admin=role==='Admin';
     const res=await fetch(`/api/users/${id}`,{method:'PUT',credentials:'same-origin',headers:jsonHeaders,body:JSON.stringify(body)});
     const j=await res.json().catch(()=>({}));
     if(!res.ok){toast(j.detail||'Could not save');return}
+    if(role&&role!=='Admin'){
+      await fetch(`/api/users/${id}/permissions`,{method:'POST',credentials:'same-origin',headers:jsonHeaders,
+        body:JSON.stringify({permissions:ROLE_PRESETS[role]||[]})});
+    }
     shut();toast('Saved');loadAccounts();
   }catch(e){toast('Could not reach the server')}
 }
@@ -755,24 +801,6 @@ async function doResetAccountPassword(id){
     const j=await res.json().catch(()=>({}));
     if(!res.ok){toast(j.detail||'Could not reset password');return}
     shut();toast('Password reset');
-  }catch(e){toast('Could not reach the server')}
-}
-function mAccountPermissions(id){
-  const a=accounts.find(x=>x.id===id);if(!a)return;
-  show(`<div class="h"><h3>Permissions — ${E(a.name)}</h3></div>
-  <div class="b"><div class="chips">
-    ${permissionsCatalog.map(p=>`<label class="chip" style="cursor:pointer"><input type="checkbox" value="${p.key}" ${a.permissions.includes(p.key)?'checked':''} style="margin-right:6px">${E(p.label)}</label>`).join('')}
-  </div></div>
-  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
-    <button class="bt p" onclick="doAccountPermissions(${id})">Save</button></div>`);
-}
-async function doAccountPermissions(id){
-  const perms=[...document.querySelectorAll('#md input:checked')].map(i=>i.value);
-  try{
-    const res=await fetch(`/api/users/${id}/permissions`,{method:'POST',credentials:'same-origin',headers:jsonHeaders,body:JSON.stringify({permissions:perms})});
-    const j=await res.json().catch(()=>({}));
-    if(!res.ok){toast(j.detail||'Could not save permissions');return}
-    shut();toast('Permissions updated');loadAccounts();
   }catch(e){toast('Could not reach the server')}
 }
 async function toggleAccountActive(id,makeActive){
@@ -886,7 +914,7 @@ function vDash(){
 
   <div class="sec grid">
     <div class="c"><div class="h"><h3>Releases in progress</h3>
-      <div class="r"><button class="lk" onclick="go('rels')">View all →</button></div></div>
+      <div class="r"><button class="lk" onclick="go('relMy')">View all →</button></div></div>
       <div class="b flush"><div class="tw"><table>
       <thead><tr><th>Team Name</th><th>Component</th><th>Gate</th><th>State</th><th>Planned</th></tr></thead><tbody>
       ${rels.filter(r=>r.cur!=='done').map(r=>`<tr class="k" onclick="openR('${r.id}')">
@@ -939,56 +967,112 @@ function vMine(){
 
 /* ═══ releases ══════════════════════════ */
 function setF(k,v){flt[k]=v;draw()}
-function vRels(){
-  const rows=rels.filter(r=>{
-    if(flt.comp!=='all'&&r.comp!==flt.comp)return false;
-    if(flt.stage!=='all'&&r.cur!==flt.stage)return false;
-    if(flt.owner!=='all'&&r.owner!==flt.owner)return false;
-    if(flt.st!=='all'&&stageState(r,r.cur)!==flt.st)return false;
-    if(flt.q){const q=flt.q.toLowerCase();
-      if(!(r.nm.toLowerCase().includes(q)||r.ref.toLowerCase().includes(q)||r.desc.toLowerCase().includes(q)))return false}
-    return true;
+/* ═══ release grid (Excel-style, shared by all 3 categories) ══ */
+let rflt={q:'',sort:'planAsc',page:1};
+const REL_PAGE_SIZE=20;
+function setRF(k,v){rflt[k]=v;rflt.page=1;draw()}
+function clearRF(){rflt={q:'',sort:'planAsc',page:1};draw()}
+function filteredReleases(catKey){
+  let rows=rels.filter(r=>r.category===catKey);
+  if(rflt.q){
+    const q=rflt.q.toLowerCase();
+    rows=rows.filter(r=>[r.nm,r.ref,r.jira,r.workstream,r.po,r.scrum,r.bizOwner,r.financeUat,r.desc,U(r.owner).nm]
+      .filter(Boolean).join(' ').toLowerCase().includes(q));
+  }
+  rows=rows.slice().sort((a,b)=>{
+    if(rflt.sort==='planDesc')return (b.plan||'').localeCompare(a.plan||'');
+    if(rflt.sort==='nameAsc')return (a.nm||'').localeCompare(b.nm||'');
+    return (a.plan||'').localeCompare(b.plan||'');
   });
-  return head('rels',`<button class="bt p" onclick="mNew()">New release</button>
-    <button class="bt" onclick="exportCsv()">Export history</button>`)+`
+  return rows;
+}
+function gridColumns(){
+  const cols=[
+   {h:'Team Name',w:190,cell:r=>`<div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div>`},
+   {h:'Component',w:110,cell:r=>E(C(r.comp).nm)},
+   {h:'Workstream',w:130,cell:r=>r.workstream?E(r.workstream):'<span style="color:var(--mut2)">—</span>'},
+   {h:"Jira #",w:100,cell:r=>r.jira?E(r.jira):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Summary/Description',w:240,cell:r=>r.desc?E(r.desc):'<span style="color:var(--mut2)">—</span>'},
+   {h:'PO',w:130,cell:r=>r.po?E(r.po):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Scrum Master',w:130,cell:r=>r.scrum?E(r.scrum):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Business Owner',w:140,cell:r=>r.bizOwner?E(r.bizOwner):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Who is the Developer',w:150,cell:r=>E(U(r.owner).nm)},
+   {h:'Finance UAT Tester',w:140,cell:r=>r.financeUat?E(r.financeUat):'<span style="color:var(--mut2)">—</span>'},
+  ];
+  MILESTONES.forEach(m=>cols.push({h:m.name,w:160,cell:r=>{
+    const ms=r.milestones.find(x=>x.key===m.key);
+    if(!ms)return'<span style="color:var(--mut2)">—</span>';
+    if(m.approval)return ms.approved?'<span class="tick">✓ Approved</span>':'<span style="color:var(--mut)">Pending</span>';
+    return stt(ms.status);
+  }}));
+  cols.push({h:'Planned Production Date',w:160,cell:r=>fd(r.plan)});
+  cols.push({h:'Actual Release Date',w:150,cell:r=>fd(r.actual)});
+  cols.push({h:'Comments',w:110,cell:r=>r.cmts.length?`💬 ${r.cmts.length}`:'<span style="color:var(--mut2)">—</span>'});
+  return cols;
+}
+function vReleaseGrid(catKey){
+  const cat=RC(catKey);
+  const canEditHere=hasPerm('create_release')&&(cat.editable||isAdmin());
+  const all=filteredReleases(catKey);
+  const totalPages=Math.max(1,Math.ceil(all.length/REL_PAGE_SIZE));
+  if(rflt.page>totalPages)rflt.page=totalPages;
+  const pageRows=all.slice((rflt.page-1)*REL_PAGE_SIZE,rflt.page*REL_PAGE_SIZE);
+  const cols=gridColumns();
+  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(canEditHere?90:0);
+  return head(cat.view,(canEditHere?`<button class="bt p" onclick="mNew('${catKey}')">New release</button>`:'')+
+    `<button class="bt" onclick="exportReleaseGridCsv('${catKey}')">Export</button>`)+
+    (!cat.editable?`<div class="sec"><div class="mt">This list is read-only${isAdmin()?' for non-admins':''}. ${isAdmin()?'As Admin you can still edit records here.':'Ask an Admin if something needs to change.'}</div></div>`:'')+`
   <div class="sec c"><div class="b">
     <div class="fg">
-      <div><label>Search</label><input value="${E(flt.q)}" placeholder="Name, reference or description"
-        oninput="flt.q=this.value;clearTimeout(window._t);window._t=setTimeout(draw,220)"></div>
-      <div><label>Component</label><select onchange="setF('comp',this.value)"><option value="all">All components</option>
-        ${comps.map(c=>`<option value="${c.id}" ${flt.comp===c.id?'selected':''}>${E(c.nm)}</option>`).join('')}</select></div>
-      <div><label>Gate</label><select onchange="setF('stage',this.value)"><option value="all">All gates</option>
-        ${STAGES.map(s=>`<option value="${s.k}" ${flt.stage===s.k?'selected':''}>${s.nm}</option>`).join('')}</select></div>
-      <div><label>Who is the Developer</label><select onchange="setF('owner',this.value)"><option value="all">Anyone</option>
-        ${users.filter(u=>u.role==='Release Management').map(u=>`<option value="${u.id}" ${flt.owner===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
-      <div><label>State</label><select onchange="setF('st',this.value)"><option value="all">Any state</option>
-        ${Object.keys(STATES).map(k=>`<option value="${k}" ${flt.st===k?'selected':''}>${STATES[k][0]}</option>`).join('')}</select></div>
+      <div><label>Search</label><input value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
+        oninput="rflt.q=this.value;rflt.page=1;clearTimeout(window._rf);window._rf=setTimeout(draw,220)"></div>
+      <div><label>Sort by</label><select onchange="setRF('sort',this.value)">
+        <option value="planAsc" ${rflt.sort==='planAsc'?'selected':''}>Planned date (earliest)</option>
+        <option value="planDesc" ${rflt.sort==='planDesc'?'selected':''}>Planned date (latest)</option>
+        <option value="nameAsc" ${rflt.sort==='nameAsc'?'selected':''}>Team name (A–Z)</option></select></div>
     </div>
+    <div style="margin-top:14px"><button class="bt s" onclick="clearRF()">Clear filters</button></div>
   </div></div>
 
-  <div class="c"><div class="b flush">${rows.length?`<div class="tw"><table>
-    <thead><tr><th>Team Name</th><th>Component</th><th>Who is the Developer</th><th>Stage</th><th>State</th><th>Business</th><th>Production</th><th>Planned</th></tr></thead>
-    <tbody>${rows.map(r=>`<tr class="k" onclick="openR('${r.id}')">
-      <td><div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div></td>
-      <td>${E(C(r.comp).nm)}</td><td>${E(U(r.owner).nm)}</td><td>${E(SL(r.cur))}</td>
-      <td>${stt(stageState(r,r.cur))}</td>
-      <td>${stageState(r,'uat')==='approved'?'<span class="tick">✓</span>':'<span style="color:var(--mut2)">—</span>'}</td>
-      <td>${stageState(r,'prod')==='approved'?'<span class="tick">✓</span>':'<span style="color:var(--mut2)">—</span>'}</td>
-      <td class="mono" style="font-size:12px">${fd(r.plan)}</td></tr>`).join('')}</tbody></table></div>
-    <div style="padding:13px 20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--mut)">
-      Showing ${rows.length} of ${rels.length} releases</div>`
-    :'<div class="ept"><h4>No releases match</h4><p>Adjust the filters above, or create a new release to get started.</p></div>'}
+  <div class="c"><div class="b flush">${pageRows.length?`
+    <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
+    <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
+      ${canEditHere?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
+    <tbody>${pageRows.map(r=>`<tr class="k" onclick="openR('${r.id}')">
+      ${cols.map(c=>`<td style="white-space:nowrap">${c.cell(r)}</td>`).join('')}
+      ${canEditHere?`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()"><button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button></td>`:''}
+    </tr>`).join('')}</tbody></table></div>
+    <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?((rflt.page-1)*REL_PAGE_SIZE+1):0}–${(rflt.page-1)*REL_PAGE_SIZE+pageRows.length} of ${all.length}</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="bt s" ${rflt.page<=1?'disabled':''} onclick="rflt.page--;draw()">← Prev</button>
+        <span style="font-size:12.5px;color:var(--mut)">Page ${rflt.page} of ${totalPages}</span>
+        <button class="bt s" ${rflt.page>=totalPages?'disabled':''} onclick="rflt.page++;draw()">Next →</button>
+      </div>
+    </div>`
+    :`<div class="ept"><h4>No releases in ${E(cat.nav)}</h4><p>${canEditHere?'Create one to get started.':'Nothing has been added to this category yet.'}</p></div>`}
   </div></div>`;
+}
+function exportReleaseGridCsv(catKey){
+  const cols=gridColumns();
+  const rows=[cols.map(c=>c.h)];
+  filteredReleases(catKey).forEach(r=>rows.push(cols.map(c=>{
+    const div=document.createElement('div');div.innerHTML=c.cell(r);return div.textContent.trim();
+  })));
+  const csv=rows.map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
+    a.href=u;a.download=`${catKey}-releases.csv`;a.click();URL.revokeObjectURL(u);toast('Exported')}
+  catch(e){navigator.clipboard?.writeText(csv);toast('Copied to clipboard')}
 }
 
 /* ═══ release detail ════════════════════ */
 function vRel(){
-  const r=R(openRel);if(!r)return vRels();
+  const r=R(openRel);if(!r)return vReleaseGrid('my_team');
   const ci=SI(r.cur),gate=STAGES[ci].gate;
   const[advOk,advWhy]=canAdvance(r);
   const[reqOk,reqWhy]=gate?canRequest(r,r.cur):[false,''];
   const oa=openApp(r.id,r.cur);
-  const acts_=canEdit()?`
+  const acts_=canEditRelease(r)?`
     ${gate&&!oa?`<button class="bt p" ${reqOk?'':'disabled'} onclick="mApprove('${r.id}','${r.cur}')">Send for ${r.cur==='uat'?'business':'production'} approval</button>`:''}
     ${advOk?`<button class="bt ${gate?'':'p'}" onclick="advance('${r.id}')">Move to ${SL(STAGES[ci+1].k)}</button>`:''}
     ${ci>0?`<button class="bt d" onclick="mReturn('${r.id}')">Return to earlier gate</button>`:''}
@@ -1018,14 +1102,14 @@ function vRel(){
   const apl=appsFor(r.id);
 
   return `<div class="ph">
-    <button class="lk" style="margin-bottom:12px" onclick="go('rels')">← All releases</button>
-    <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()}</div>
+    <button class="lk" style="margin-bottom:12px" onclick="go('${RC(r.category).view}')">← ${E(RC(r.category).nav)}</button>
+    <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()} · <span class="tag">${E(RC(r.category).nav)}</span></div>
     <h1>${E(r.nm)}</h1><p>${E(r.desc)}</p>
     ${acts_?`<div class="acts">${acts_}</div>`:''}
   </div>
 
-  ${(advWhy&&canEdit()&&r.cur!=='done')?`<div class="sec"><div class="mt w">${E(advWhy)}</div></div>`:''}
-  ${(gate&&reqWhy&&!oa&&canEdit())?`<div class="sec"><div class="mt w">${E(reqWhy)}</div></div>`:''}
+  ${(advWhy&&canEditRelease(r)&&r.cur!=='done')?`<div class="sec"><div class="mt w">${E(advWhy)}</div></div>`:''}
+  ${(gate&&reqWhy&&!oa&&canEditRelease(r))?`<div class="sec"><div class="mt w">${E(reqWhy)}</div></div>`:''}
 
   ${rail}
 
@@ -1072,14 +1156,14 @@ function vRel(){
             <span class="mono" style="font-size:11px;color:var(--mut2);margin-left:7px">${fdt(c.on)}</span></div>
           <div style="margin-top:4px;color:var(--ink2)">${E(c.tx)}</div></div>`).join('')
         :'<p style="color:var(--mut);font-size:13.5px;margin-bottom:14px">No notes on this release yet.</p>'}
-        ${canEdit()?`<label>Add a note</label><textarea id="cmt" rows="2" placeholder="Visible to Admin and Release Management"></textarea>
+        ${canEditRelease(r)?`<label>Add a note</label><textarea id="cmt" rows="2" placeholder="Visible to Admin and Release Management"></textarea>
         <button class="bt s" style="margin-top:10px" onclick="addCmt('${r.id}')">Add note</button>`:''}
       </div></div>
     </div>
 
     <div>
       <div class="c sec"><div class="h"><h3>Basic information</h3>
-        <div class="r">${canEdit()?`<button class="bt s" onclick="mEditBasics('${r.id}')">Edit</button>`:''}</div></div><div class="b">
+        <div class="r">${canEditRelease(r)?`<button class="bt s" onclick="mEditBasics('${r.id}')">Edit</button>`:''}</div></div><div class="b">
         <div class="kv">
           <div class="k">Workstream</div><div>${r.workstream?E(r.workstream):'<span style="color:var(--mut2)">—</span>'}</div>
           <div class="k">Jira #</div><div class="mono" style="font-size:12.5px">${r.jira?E(r.jira):'<span style="color:var(--mut2)">—</span>'}</div>
@@ -1106,7 +1190,7 @@ function vRel(){
           <div class="k">Actual</div><div class="mono" style="font-size:12.5px">${fd(r.actual)}</div>
           <div class="k">Attachments</div><div>${r.atts.length?r.atts.map(a=>`<div class="mono" style="font-size:12px">${E(a)}</div>`).join(''):'<span style="color:var(--mut)">None</span>'}</div>
         </div>
-        ${canEdit()?`<div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
+        ${canEditRelease(r)?`<div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="bt s" onclick="mDate('${r.id}')">Set planned date</button>
           <button class="bt s" onclick="mAtt('${r.id}')">Add attachment</button></div>`:''}
       </div></div>
@@ -1134,7 +1218,7 @@ function vRel(){
       <td>${stt(m.status)}</td>
       <td>${c.approval?(m.approved?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:10.5px;color:var(--mut2);margin-top:2px">${m.approvedBy?E(m.approvedBy):''} ${fd(m.approvedOn)}</div>`:'<span style="color:var(--mut)">Pending</span>'):'<span style="color:var(--mut2)">—</span>'}</td>
       <td style="font-size:12.5px;color:var(--mut);max-width:180px">${m.comments?E(m.comments):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td style="text-align:right">${canEdit()?`<button class="bt s" onclick="mEditMilestone('${r.id}','${m.key}')">Edit</button>`:''}</td>
+      <td style="text-align:right">${canEditRelease(r)?`<button class="bt s" onclick="mEditMilestone('${r.id}','${m.key}')">Edit</button>`:''}</td>
     </tr>`}).join('')}
     </tbody></table></div></div></div>`;
 }
@@ -1201,14 +1285,10 @@ function vConflicts(){
         ${CF_STATUSES.map(t=>`<option ${cflt.status===t?'selected':''}>${t}</option>`).join('')}</select></div>
       <div><label>Conflict Type</label><select onchange="setCF('conflictType',this.value)"><option value="all">Any type</option>
         ${CONFLICT_TYPES.map(t=>`<option ${cflt.conflictType===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Who is the Developer</label><select onchange="setCF('dev',this.value)"><option value="all">Anyone</option>
-        ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${cflt.dev===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
       <div><label>Assigned To</label><select onchange="setCF('assignedTo',this.value)"><option value="all">Anyone</option>
         ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${cflt.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
       <div><label>Object Name</label><input value="${E(cflt.objName)}" placeholder="e.g. CUSTOMER_FORM.fmb"
         oninput="cflt.objName=this.value;cflt.page=1;clearTimeout(window._cft2);window._cft2=setTimeout(draw,220)"></div>
-      <div><label>Jira #</label><input value="${E(cflt.jira)}" placeholder="e.g. CD-123"
-        oninput="cflt.jira=this.value;cflt.page=1;clearTimeout(window._cft3);window._cft3=setTimeout(draw,220)"></div>
       <div><label>Sort by</label><select onchange="setCF('sort',this.value)">
         <option value="idDesc" ${cflt.sort==='idDesc'?'selected':''}>Identified date (newest)</option>
         <option value="idAsc" ${cflt.sort==='idAsc'?'selected':''}>Identified date (oldest)</option>
@@ -1219,19 +1299,20 @@ function vConflicts(){
   </div></div>
 
   <div class="c"><div class="b flush">${pageRows.length?`<div class="tw"><table>
-    <thead><tr><th>ID</th><th>Team Name</th><th>Jira #</th><th>Object</th><th>Type</th><th>Environment</th>
-      <th>Severity</th><th>Status</th><th>Assigned To</th><th>Identified</th><th></th></tr></thead>
+    <thead><tr><th>Conflict Type</th><th>Conflict Description</th><th>Object Type</th><th>Object Name</th><th>Environment</th>
+      <th>Severity</th><th>Status</th><th>Assigned To</th><th>Resolution</th><th>Comments</th><th>Attachments</th><th></th></tr></thead>
     <tbody>${pageRows.map(c=>`<tr class="k" onclick="mEditConflict('${c.id}')">
-      <td class="mono" style="font-size:11.5px">${c.id}</td>
-      <td>${c.rel&&R(c.rel)?E(R(c.rel).nm):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td class="mono" style="font-size:11.5px">${c.jira?E(c.jira):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td>${c.objectName?E(c.objectName):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td>${E(c.conflictType||'—')}</td>
+      <td style="max-width:260px">${c.description?E(c.description):'<span style="color:var(--mut2)">—</span>'}</td>
       <td><span class="tag">${E(c.objectType||'—')}</span></td>
+      <td>${c.objectName?E(c.objectName):'<span style="color:var(--mut2)">—</span>'}</td>
       <td>${E(c.environment||'—')}</td>
       <td><span class="stt ${CF_SEV_CLS[c.severity]||'s-none'}"><i></i>${E(c.severity||'—')}</span></td>
       <td><span class="stt ${CF_STATUS_CLS[c.status]||'s-none'}"><i></i>${E(c.status||'—')}</span></td>
       <td>${c.assignedTo?E(U(c.assignedTo).nm):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td class="mono" style="font-size:12px">${fd(c.identifiedDate)}</td>
+      <td style="max-width:180px">${c.resolution?E(c.resolution):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td style="max-width:160px">${c.comments?E(c.comments):'<span style="color:var(--mut2)">—</span>'}</td>
+      <td>${files.filter(f=>f.conflict_id===c.id).length?`📎 ${files.filter(f=>f.conflict_id===c.id).length}`:'<span style="color:var(--mut2)">—</span>'}</td>
       <td style="text-align:right">${hasPerm('delete_conflict')?`<button class="bt s d" onclick="event.stopPropagation();mDelConflict('${c.id}')">Delete</button>`:''}</td>
     </tr>`).join('')}</tbody></table></div>
     <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -1247,12 +1328,10 @@ function vConflicts(){
 }
 function mNewConflict(){
   show(`<div class="h"><h3>New conflict</h3><p>Record a conflict between releases or development changes.</p></div>
-  <div class="b"><div class="fg">
-    <div><label>Team Name (release)</label><select id="cf-rel"><option value="">— none —</option>
+  <div class="b">
+    <div style="margin-bottom:16px"><label>Team Name (release reference — optional)</label><select id="cf-rel"><option value="">— none —</option>
       ${rels.map(r=>`<option value="${r.id}">${E(r.nm)} (${r.ref})</option>`).join('')}</select></div>
-    <div><label>Jira #</label><input id="cf-jira"></div>
-    <div><label>Who is the Developer</label><select id="cf-dev"><option value="">— none —</option>
-      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
+    <div class="fg">
     <div><label>Conflict Type</label><select id="cf-ctype">${CONFLICT_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
     <div><label>Object Type</label><select id="cf-otype">${OBJECT_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
     <div><label>Object Name</label><input id="cf-oname" placeholder="e.g. CUSTOMER_FORM.fmb"></div>
@@ -1261,30 +1340,26 @@ function mNewConflict(){
     <div><label>Status</label><select id="cf-status">${CF_STATUSES.map(t=>`<option>${t}</option>`).join('')}</select></div>
     <div><label>Assigned To</label><select id="cf-assigned"><option value="">— none —</option>
       ${users.filter(u=>u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
-    <div><label>Identified date</label><input type="date" id="cf-iddate" value="${now().slice(0,10)}"></div>
   </div>
-  <div style="margin-top:16px"><label>Summary</label><input id="cf-summary" placeholder="Short summary">
-    <div class="er" id="e-cf-summary">A summary is required.</div></div>
-  <div style="margin-top:14px"><label>Conflict description</label><textarea id="cf-desc" rows="3"></textarea></div>
+  <div style="margin-top:16px"><label>Conflict Description</label><textarea id="cf-desc" rows="3" placeholder="What is conflicting, and why"></textarea>
+    <div class="er" id="e-cf-summary">A description is required.</div></div>
   </div>
   <div class="f"><button class="bt" onclick="shut()">Cancel</button>
     <button class="bt p" onclick="doNewConflict()">Create conflict</button></div>`);
 }
 function doNewConflict(){
-  const summary=document.getElementById('cf-summary').value.trim();
-  if(!summary){document.getElementById('e-cf-summary').classList.add('on');return}
+  const description=document.getElementById('cf-desc').value.trim();
+  if(!description){document.getElementById('e-cf-summary').classList.add('on');return}
   const c={
     id:nid('CFL-'),
     rel:document.getElementById('cf-rel').value||null,
-    jira:document.getElementById('cf-jira').value.trim(),
-    summary,
-    developer:document.getElementById('cf-dev').value||null,
+    summary:description,
     conflictType:document.getElementById('cf-ctype').value,
     objectType:document.getElementById('cf-otype').value,
     objectName:document.getElementById('cf-oname').value.trim(),
     environment:document.getElementById('cf-env').value,
-    description:document.getElementById('cf-desc').value.trim(),
-    identifiedDate:document.getElementById('cf-iddate').value||null,
+    description,
+    identifiedDate:now().slice(0,10),
     identifiedBy:me,
     severity:document.getElementById('cf-sev').value,
     status:document.getElementById('cf-status').value,
@@ -1292,19 +1367,18 @@ function doNewConflict(){
     resolution:'',resolutionDate:null,comments:'',atts:[]
   };
   conflicts.unshift(c);
-  logAudit(`Created conflict — ${summary}`,null,'—',c.status);
+  logAudit(`Created conflict — ${description.slice(0,60)}`,null,'—',c.status);
   shut();draw();toast('Conflict recorded');persist();
 }
 function mEditConflict(id){
   const c=CF(id);if(!c)return;
   const canWrite=hasPerm('edit_conflict');
-  show(`<div class="h"><h3>${c.id}</h3><p>${E(c.summary)}</p></div>
-  <div class="b"><div class="fg">
-    <div><label>Team Name (release)</label><select id="cf-rel" ${canWrite?'':'disabled'}><option value="">— none —</option>
+  const linkedFiles=files.filter(f=>f.conflict_id===id);
+  show(`<div class="h"><h3>Edit conflict</h3><p>${E(c.description||c.summary||'')}</p></div>
+  <div class="b">
+    <div style="margin-bottom:16px"><label>Team Name (release reference — optional)</label><select id="cf-rel" ${canWrite?'':'disabled'}><option value="">— none —</option>
       ${rels.map(r=>`<option value="${r.id}" ${c.rel===r.id?'selected':''}>${E(r.nm)} (${r.ref})</option>`).join('')}</select></div>
-    <div><label>Jira #</label><input id="cf-jira" value="${E(c.jira||'')}" ${canWrite?'':'disabled'}></div>
-    <div><label>Who is the Developer</label><select id="cf-dev" ${canWrite?'':'disabled'}><option value="">— none —</option>
-      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${c.developer===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
+    <div class="fg">
     <div><label>Conflict Type</label><select id="cf-ctype" ${canWrite?'':'disabled'}>${CONFLICT_TYPES.map(t=>`<option ${c.conflictType===t?'selected':''}>${t}</option>`).join('')}</select></div>
     <div><label>Object Type</label><select id="cf-otype" ${canWrite?'':'disabled'}>${OBJECT_TYPES.map(t=>`<option ${c.objectType===t?'selected':''}>${t}</option>`).join('')}</select></div>
     <div><label>Object Name</label><input id="cf-oname" value="${E(c.objectName||'')}" ${canWrite?'':'disabled'}></div>
@@ -1313,10 +1387,8 @@ function mEditConflict(id){
     <div><label>Status</label><select id="cf-status" ${canWrite?'':'disabled'}>${CF_STATUSES.map(t=>`<option ${c.status===t?'selected':''}>${t}</option>`).join('')}</select></div>
     <div><label>Assigned To</label><select id="cf-assigned" ${canWrite?'':'disabled'}><option value="">— none —</option>
       ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${c.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
-    <div><label>Identified date</label><input type="date" id="cf-iddate" value="${E(c.identifiedDate||'')}" ${canWrite?'':'disabled'}></div>
   </div>
-  <div style="margin-top:16px"><label>Summary</label><input id="cf-summary" value="${E(c.summary)}" ${canWrite?'':'disabled'}></div>
-  <div style="margin-top:14px"><label>Conflict description</label><textarea id="cf-desc" rows="3" ${canWrite?'':'disabled'}>${E(c.description||'')}</textarea></div>
+  <div style="margin-top:16px"><label>Conflict Description</label><textarea id="cf-desc" rows="3" ${canWrite?'':'disabled'}>${E(c.description||'')}</textarea></div>
   <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
     <div style="font-family:var(--d);font-weight:600;font-size:13px;margin-bottom:12px">Resolution</div>
     <div class="fg"><div><label>Resolution date</label><input type="date" id="cf-resdate" value="${E(c.resolutionDate||'')}" ${canWrite?'':'disabled'}></div></div>
@@ -1324,9 +1396,11 @@ function mEditConflict(id){
   </div>
   <div style="margin-top:14px"><label>Comments</label><textarea id="cf-comments" rows="2" ${canWrite?'':'disabled'}>${E(c.comments||'')}</textarea></div>
   <div style="margin-top:14px"><label>Attachments</label>
-    <div>${c.atts&&c.atts.length?c.atts.map(a=>`<div class="mono" style="font-size:12px">${E(a)}</div>`).join(''):'<span style="color:var(--mut)">None</span>'}</div>
-    ${hasPerm('upload_files')?`<input id="cf-newatt" placeholder="filename.sql" style="margin-top:8px">
-    <button class="bt s" style="margin-top:8px" onclick="addConflictAtt('${id}')">Add attachment</button>`:''}
+    <div>${linkedFiles.length?linkedFiles.map(f=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0">
+      <span class="mono" style="font-size:12px">${E(f.original_name)} <span style="color:var(--mut2)">(${fileSize(f.size_bytes)})</span></span>
+      ${hasPerm('download_files')?`<button class="bt s" onclick="downloadFile(${f.id})">Download</button>`:''}
+      </div>`).join(''):'<span style="color:var(--mut)">None</span>'}</div>
+    ${hasPerm('upload_files')?`<button class="bt s" style="margin-top:8px" onclick="mUploadFile({conflictId:'${id}'})">Upload attachment</button>`:''}
   </div>
   </div>
   <div class="f"><button class="bt" onclick="shut()">Cancel</button>
@@ -1335,8 +1409,6 @@ function mEditConflict(id){
 function doEditConflict(id){
   const c=CF(id);if(!c)return;
   c.rel=document.getElementById('cf-rel').value||null;
-  c.jira=document.getElementById('cf-jira').value.trim();
-  c.developer=document.getElementById('cf-dev').value||null;
   c.conflictType=document.getElementById('cf-ctype').value;
   c.objectType=document.getElementById('cf-otype').value;
   c.objectName=document.getElementById('cf-oname').value.trim();
@@ -1344,22 +1416,13 @@ function doEditConflict(id){
   c.severity=document.getElementById('cf-sev').value;
   c.status=document.getElementById('cf-status').value;
   c.assignedTo=document.getElementById('cf-assigned').value||null;
-  c.identifiedDate=document.getElementById('cf-iddate').value||null;
-  c.summary=document.getElementById('cf-summary').value.trim()||c.summary;
   c.description=document.getElementById('cf-desc').value.trim();
+  c.summary=c.description;
   c.resolutionDate=document.getElementById('cf-resdate').value||null;
   c.resolution=document.getElementById('cf-res').value.trim();
   c.comments=document.getElementById('cf-comments').value.trim();
   logAudit(`Updated conflict — ${c.id}`,null,'—',c.status);
   shut();draw();toast('Conflict updated');persist();
-}
-function addConflictAtt(id){
-  const c=CF(id);const v=document.getElementById('cf-newatt').value.trim();
-  if(!v)return;
-  if(!c.atts)c.atts=[];
-  c.atts.push(v);
-  logAudit(`Added attachment to conflict ${c.id}`,null,'—',v);
-  mEditConflict(id);persist();
 }
 function mDelConflict(id){
   const c=CF(id);if(!c)return;
@@ -1374,12 +1437,11 @@ function doDelConflict(id){
   shut();draw();toast('Conflict deleted');persist();
 }
 function exportConflictsCsv(){
-  const rows=[['ID','Team Name','Jira #','Developer','Conflict Type','Object Type','Object Name','Environment',
-    'Description','Identified Date','Identified By','Severity','Status','Assigned To','Resolution','Resolution Date','Comments']];
-  conflicts.forEach(c=>rows.push([c.id,c.rel&&R(c.rel)?R(c.rel).nm:'',c.jira||'',c.developer?U(c.developer).nm:'',
-    c.conflictType||'',c.objectType||'',c.objectName||'',c.environment||'',c.description||'',fd(c.identifiedDate),
-    c.identifiedBy?U(c.identifiedBy).nm:'',c.severity||'',c.status||'',c.assignedTo?U(c.assignedTo).nm:'',
-    c.resolution||'',fd(c.resolutionDate),c.comments||'']));
+  const rows=[['Conflict Type','Conflict Description','Object Type','Object Name','Environment','Severity','Status',
+    'Assigned To','Resolution','Comments','Attachments']];
+  conflicts.forEach(c=>rows.push([c.conflictType||'',c.description||c.summary||'',c.objectType||'',c.objectName||'',
+    c.environment||'',c.severity||'',c.status||'',c.assignedTo?U(c.assignedTo).nm:'',c.resolution||'',c.comments||'',
+    files.filter(f=>f.conflict_id===c.id).length]));
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
     a.href=u;a.download='conflict-tracker.csv';a.click();URL.revokeObjectURL(u);toast('Conflicts exported')}
@@ -1392,7 +1454,7 @@ function setFF(k,v){fflt[k]=v;draw()}
 function clearFF(){fflt={objType:'all',rel:'all',env:'all',q:''};draw()}
 async function loadFiles(){
   try{const r=await fetch('/api/files',{credentials:'same-origin'});if(r.ok)files=await r.json()}catch(e){}
-  if(view==='files')draw();
+  if(view==='files'||view==='cft')draw();
 }
 function filteredFiles(){
   return files.filter(f=>{
@@ -1458,20 +1520,24 @@ function vFiles(){
     :'<div class="ept"><h4>No files uploaded yet</h4><p>Upload Oracle development objects (.fmb, .sql, .pkb and more) to track them here.</p></div>'}
   </div></div>`;
 }
-function mUploadFile(){
-  show(`<div class="h"><h3>Upload file</h3><p>Allowed: .fmb, .rdf, .rep, .sql, .pls, .plb, .pkb, .pks, .prc, .fnc, .trg, .typ, .xml, .txt, .ctl, .java, .sh — max 20 MB.</p></div>
+let ufConflictId='';
+function mUploadFile(opts){
+  opts=opts||{};
+  ufConflictId=opts.conflictId||'';
+  const c=ufConflictId?CF(ufConflictId):null;
+  show(`<div class="h"><h3>Upload file</h3><p>${c?`Attaching to conflict ${c.id}. `:''}Allowed: .fmb, .rdf, .rep, .sql, .pls, .plb, .pkb, .pks, .prc, .fnc, .trg, .typ, .xml, .txt, .ctl, .java, .sh — max 20 MB.</p></div>
   <div class="b">
     <label>File</label><input type="file" id="uf-file">
     <div class="er" id="e-uf-file">Choose a file.</div>
     <div class="fg" style="margin-top:14px">
       <div><label>Object Type</label><select id="uf-otype" onchange="document.getElementById('uf-formname-wrap').style.display=this.value==='FMB'?'block':'none'">
-        ${OBJECT_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-      <div><label>Object Name</label><input id="uf-oname" placeholder="e.g. CUSTOMER_FORM.fmb"></div>
+        ${OBJECT_TYPES.map(t=>`<option ${c&&c.objectType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Object Name</label><input id="uf-oname" placeholder="e.g. CUSTOMER_FORM.fmb" value="${c?E(c.objectName||''):''}"></div>
       <div><label>Version</label><input id="uf-version" placeholder="e.g. v1.0"></div>
-      <div><label>Team Name (release)</label><select id="uf-rel"><option value="">— none —</option>
+      ${c?'':`<div><label>Team Name (release)</label><select id="uf-rel"><option value="">— none —</option>
         ${rels.map(r=>`<option value="${r.id}">${E(r.nm)} (${r.ref})</option>`).join('')}</select></div>
-      <div><label>Jira #</label><input id="uf-jira"></div>
-      <div><label>Environment</label><select id="uf-env">${ENVIRONMENTS.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div><label>Jira #</label><input id="uf-jira"></div>`}
+      <div><label>Environment</label><select id="uf-env">${ENVIRONMENTS.map(t=>`<option ${c&&c.environment===t?'selected':''}>${t}</option>`).join('')}</select></div>
     </div>
     <div id="uf-formname-wrap" style="display:none;margin-top:14px"><label>Form Name (Oracle Forms internal name)</label><input id="uf-formname"></div>
     <div style="margin-top:14px"><label>Description</label><textarea id="uf-desc" rows="2"></textarea></div>
@@ -1488,10 +1554,13 @@ async function doUploadFile(){
   fd.append('object_type',document.getElementById('uf-otype').value);
   fd.append('object_name',document.getElementById('uf-oname').value.trim());
   fd.append('version',document.getElementById('uf-version').value.trim());
-  fd.append('rel_id',document.getElementById('uf-rel').value);
-  fd.append('jira',document.getElementById('uf-jira').value.trim());
+  const relEl=document.getElementById('uf-rel');
+  fd.append('rel_id',relEl?relEl.value:'');
+  const jiraEl=document.getElementById('uf-jira');
+  fd.append('jira',jiraEl?jiraEl.value.trim():'');
   fd.append('environment',document.getElementById('uf-env').value);
   fd.append('description',document.getElementById('uf-desc').value.trim());
+  fd.append('conflict_id',ufConflictId||'');
   const fnEl=document.getElementById('uf-formname');
   fd.append('form_name',fnEl?fnEl.value.trim():'');
   const btn=document.getElementById('uf-submit');btn.disabled=true;btn.textContent='Uploading…';
@@ -1500,7 +1569,10 @@ async function doUploadFile(){
     const j=await res.json().catch(()=>({}));
     btn.disabled=false;btn.textContent='Upload';
     if(!res.ok){toast(j.detail||'Upload failed');return}
-    shut();toast('File uploaded');loadFiles();
+    shut();toast('File uploaded');
+    const cid=ufConflictId;ufConflictId='';
+    loadFiles();
+    if(cid)setTimeout(()=>mEditConflict(cid),150);
   }catch(e){btn.disabled=false;btn.textContent='Upload';toast('Could not reach the server')}
 }
 function mFileDetail(id){
@@ -1904,14 +1976,19 @@ function doEditMilestone(rid,key){
   logAudit(`Updated milestone — ${c.name}`,rid,'—',STATES[m.status][0]);
   shut();draw();toast('Milestone updated');persist();
 }
-function mNew(){
-  show(`<div class="h"><h3>New release</h3><p>The release enters at gate one, grooming session.</p></div>
+let newReleaseCategory='my_team';
+function mNew(catKey){
+  newReleaseCategory=catKey||'my_team';
+  show(`<div class="h"><h3>New release — ${E(RC(newReleaseCategory).nav)}</h3><p>The release enters at gate one, grooming session.</p></div>
   <div class="b"><div class="fg">
     <div><label>Team Name</label><input id="nn" placeholder="Order supersede lookup">
       <div class="er" id="e-nn">A name is required.</div></div>
     <div><label>Component</label><select id="nc">${comps.map(c=>`<option value="${c.id}">${E(c.nm)}</option>`).join('')}</select></div>
     <div><label>Who is the Developer</label><select id="no">${users.filter(u=>u.role==='Release Management'&&u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
-    <div><label>Planned production date</label><input type="date" id="np"></div></div>
+    <div><label>Planned production date</label><input type="date" id="np"></div>
+    ${isAdmin()?`<div><label>Release Category</label><select id="nn-cat">
+      ${RELEASE_CATEGORIES.map(c=>`<option value="${c.key}" ${newReleaseCategory===c.key?'selected':''}>${E(c.nav)}</option>`).join('')}</select></div>`:''}
+    </div>
     <div style="margin-top:16px"><label>Summary/Description</label>
       <textarea id="nd" rows="3" placeholder="Described in business terms"></textarea></div>
     <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
@@ -1931,7 +2008,9 @@ function mNew(){
 function doNew(){
   const nm=document.getElementById('nn').value.trim();
   if(!nm){document.getElementById('e-nn').classList.add('on');return}
-  const r={id:nid('R'),ref:'REL-'+(1044+rels.length),nm,
+  const catEl=document.getElementById('nn-cat');
+  const category=(isAdmin()&&catEl)?catEl.value:newReleaseCategory;
+  const r={id:nid('R'),ref:'REL-'+(1044+rels.length),nm,category,
     comp:document.getElementById('nc').value,owner:document.getElementById('no').value,
     desc:document.getElementById('nd').value.trim()||'No description given.',
     plan:document.getElementById('np').value||null,actual:null,cur:'groom',st:blank('groom'),cmts:[],atts:[],
@@ -1958,9 +2037,10 @@ function doDelRelease(rid){
   const r=R(rid);
   const v=document.getElementById('del-confirm').value.trim();
   if(v!==r.ref){document.getElementById('e-del').classList.add('on');return}
+  const backTo=RC(r.category).view;
   rels=rels.filter(x=>x.id!==rid);
   logAudit('Deleted release',null,r.ref,'—');
-  shut();go('rels');toast(`${r.ref} deleted`);persist();
+  shut();go(backTo);toast(`${r.ref} deleted`);persist();
 }
 function mPull(){
   show(`<div class="h"><h3>Record a pull or applied change</h3><p>Every other active owner is alerted immediately.</p></div>

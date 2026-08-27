@@ -113,6 +113,7 @@ def get_conn():
         "form_name TEXT, "
         "version TEXT, "
         "rel_id TEXT, "
+        "conflict_id TEXT, "
         "jira TEXT, "
         "environment TEXT, "
         "description TEXT, "
@@ -121,6 +122,9 @@ def get_conn():
         "uploaded_by TEXT, "
         "uploaded_at TEXT NOT NULL)"
     )
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(files)").fetchall()}
+    if "conflict_id" not in existing_cols:
+        conn.execute("ALTER TABLE files ADD COLUMN conflict_id TEXT")
     return conn
 
 
@@ -528,6 +532,32 @@ def get_state(user: dict = Depends(require_release_view)):
         conn.close()
 
 
+LOCKED_RELEASE_CATEGORIES = {"new_release", "bms"}
+
+
+def enforce_release_locks(conn, incoming: dict):
+    """New Release and BMS Release are read-only for non-admins, enforced here
+    (not just hidden in the UI) since releases still share one whole-state
+    save endpoint. Admins are exempt — they're the only ones who can create
+    or edit records in those two categories at all."""
+    row = conn.execute("SELECT data FROM state WHERE id = 1").fetchone()
+    old_rels = {r["id"]: r for r in json.loads(row[0])["rels"]} if row else {}
+    new_rels = {r["id"]: r for r in incoming.get("rels", [])}
+    for rid, old_r in old_rels.items():
+        if old_r.get("category") in LOCKED_RELEASE_CATEGORIES:
+            if new_rels.get(rid) != old_r:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"{old_r.get('ref', rid)} is in a read-only release category and cannot be changed.",
+                )
+    for rid, new_r in new_rels.items():
+        if rid not in old_rels and new_r.get("category") in LOCKED_RELEASE_CATEGORIES:
+            raise HTTPException(
+                status_code=403,
+                detail="Only an Admin can create records in New Release or BMS Release.",
+            )
+
+
 @app.put("/api/state")
 async def put_state(request: Request, user: dict = Depends(require_release_edit)):
     body = await request.json()
@@ -536,6 +566,8 @@ async def put_state(request: Request, user: dict = Depends(require_release_edit)
         raise HTTPException(status_code=400, detail=f"missing keys: {missing}")
     conn = get_conn()
     try:
+        if not user["is_admin"]:
+            enforce_release_locks(conn, body)
         conn.execute(
             "INSERT INTO state (id, data, updated_at) VALUES (1, ?, datetime('now')) "
             "ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
@@ -611,6 +643,7 @@ async def upload_file(
     form_name: str = Form(""),
     version: str = Form(""),
     rel_id: str = Form(""),
+    conflict_id: str = Form(""),
     jira: str = Form(""),
     environment: str = Form(""),
     description: str = Form(""),
@@ -639,10 +672,11 @@ async def upload_file(
         now = datetime.now(timezone.utc).isoformat()
         cur = conn.execute(
             "INSERT INTO files (original_name, stored_name, file_type, object_type, object_name, form_name, "
-            "version, rel_id, jira, environment, description, status, size_bytes, uploaded_by, uploaded_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,'Active',?,?,?)",
+            "version, rel_id, conflict_id, jira, environment, description, status, size_bytes, uploaded_by, uploaded_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'Active',?,?,?)",
             (file.filename, stored_name, ext, object_type, object_name, form_name, version,
-             rel_id or None, jira, environment, description, len(contents), user["username"], now),
+             rel_id or None, conflict_id or None, jira, environment, description,
+             len(contents), user["username"], now),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM files WHERE id = ?", (cur.lastrowid,)).fetchone()
