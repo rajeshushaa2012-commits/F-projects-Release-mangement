@@ -301,14 +301,16 @@ const blankMilestones=()=>MILESTONES.map(m=>({key:m.key,owner:null,ideal:null,ac
   status:'notStarted',comments:'',approved:false,approvedBy:null,approvedOn:null}));
 
 /* ═══ release categories ═════════════════
-   Three sections sharing identical columns — only edit access differs.
-   My Team Release: editable by Release Team/Admin. New Release and BMS
-   Release: read-only for everyone except Admin, enforced server-side too
-   (see enforce_release_locks in main.py), not just hidden in the UI. */
+   Three tabs on one Release Management page, sharing identical columns —
+   only edit access differs. My Team Release: editable by Release Team/
+   Admin. New Release and BMS Release: read-only for everyone, Admin
+   included, once a record exists — enforced server-side too (see
+   enforce_release_locks in main.py), not just hidden in the UI. Admin's
+   only remaining privilege on the locked two is creating a new record. */
 const RELEASE_CATEGORIES=[
- {key:'my_team',    view:'relMy',  nav:'My Team Release', ic:'📦', editable:true},
- {key:'new_release',view:'relNew', nav:'New Release',      ic:'🆕', editable:false},
- {key:'bms',         view:'relBms', nav:'BMS Release',      ic:'🏛️', editable:false}
+ {key:'my_team',    nav:'My Team Release', ic:'📦', editable:true},
+ {key:'new_release',nav:'New Release',      ic:'🆕', editable:false},
+ {key:'bms',         nav:'BMS Release',      ic:'🏛️', editable:false}
 ];
 const RC=key=>RELEASE_CATEGORIES.find(c=>c.key===key)||RELEASE_CATEGORIES[0];
 
@@ -543,9 +545,7 @@ const NAV=[
  {g:'Overview',items:[
    {k:'dash',l:'Dashboard',ic:'🏠'},
    {k:'mine',l:'My pending actions',ic:'⏳',ct:()=>pendingForMe().length,alert:1},
-   {k:'relMy', l:'My Team Release',ic:'📦',ct:()=>rels.filter(r=>r.category==='my_team').length},
-   {k:'relNew',l:'New Release',ic:'🆕',ct:()=>rels.filter(r=>r.category==='new_release').length},
-   {k:'relBms',l:'BMS Release',ic:'🏛️',ct:()=>rels.filter(r=>r.category==='bms').length},
+   {k:'relmgmt',l:'Release Management',ic:'📦',ct:()=>rels.length},
    {k:'cal', l:'Release calendar',ic:'📅'},
    {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>conflicts.filter(c=>c.status==='Open').length}]},
  {g:'Messages',items:[
@@ -586,9 +586,7 @@ function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
 /* ═══ router ════════════════════════════ */
 const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'],
  mine:['My pending actions','Only the items waiting on you.'],
- relMy:['My Team Release','Editable — every field from Release.xlsx as its own column.'],
- relNew:['New Release','Read-only reference list — same columns as My Team Release.'],
- relBms:['BMS Release','Read-only master/reference release — same columns as the others.'],
+ relmgmt:['Release Management','One shared table structure — every field from Release.xlsx as its own column. My Team Release is editable; New Release and BMS Release are read-only reference lists.'],
  rel:['Release detail',''],cal:['Release calendar','Planned production releases by date.'],
  cft:['Conflict Tracker','Track conflicts between releases and development changes.'],
  chg:['Change activity','Who pulled or applied changes, and who was told.'],
@@ -618,9 +616,7 @@ function draw(){
     v.innerHTML=vConflicts();return;
   }
   if(!hasPerm('view_releases')){v.innerHTML=vRO('You need the view_releases permission to see this page.');return}
-  if(view==='relMy'){v.innerHTML=vReleaseGrid('my_team');return}
-  if(view==='relNew'){v.innerHTML=vReleaseGrid('new_release');return}
-  if(view==='relBms'){v.innerHTML=vReleaseGrid('bms');return}
+  if(view==='relmgmt'){v.innerHTML=vReleaseGrid();return}
   v.innerHTML=({dash:vDash,mine:vMine,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
     aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
 }
@@ -916,7 +912,7 @@ function vDash(){
 
   <div class="sec grid">
     <div class="c"><div class="h"><h3>Releases in progress</h3>
-      <div class="r"><button class="lk" onclick="go('relMy')">View all →</button></div></div>
+      <div class="r"><button class="lk" onclick="goRelTab('my_team')">View all →</button></div></div>
       <div class="b flush"><div class="tw"><table>
       <thead><tr><th>Team Name</th><th>Component</th><th>Gate</th><th>State</th><th>Planned</th></tr></thead><tbody>
       ${rels.filter(r=>r.cur!=='done').map(r=>`<tr class="k" onclick="openR('${r.id}')">
@@ -972,6 +968,9 @@ function setF(k,v){flt[k]=v;draw()}
 /* ═══ release grid (Excel-style, shared by all 3 categories) ══ */
 let rflt={q:'',sort:'planAsc',page:1};
 const REL_PAGE_SIZE=20;
+let releaseTab='my_team';
+function setReleaseTab(key){releaseTab=key;rflt.page=1;draw()}
+function goRelTab(key){releaseTab=key;go('relmgmt')}
 function setRF(k,v){rflt[k]=v;rflt.page=1;draw()}
 function clearRF(){rflt={q:'',sort:'planAsc',page:1};draw()}
 function filteredReleases(catKey){
@@ -1015,7 +1014,8 @@ function gridColumns(){
   cols.push({h:'Developer Name',w:150,cell:r=>E(U(r.owner).nm)});
   return cols;
 }
-function vReleaseGrid(catKey){
+function vReleaseGrid(){
+  const catKey=releaseTab;
   const cat=RC(catKey);
   const canCreateHere=canCreateRelease(catKey);
   const canDeleteHere=hasPerm('delete_release')&&cat.editable;
@@ -1025,8 +1025,11 @@ function vReleaseGrid(catKey){
   const pageRows=all.slice((rflt.page-1)*REL_PAGE_SIZE,rflt.page*REL_PAGE_SIZE);
   const cols=gridColumns();
   const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(canDeleteHere?90:0);
-  return head(cat.view,(canCreateHere?`<button class="bt p" onclick="mNew('${catKey}')">New release</button>`:'')+
+  const tabs=`<div class="seg" style="margin-top:16px">${RELEASE_CATEGORIES.map(c=>
+    `<button class="${c.key===catKey?'on':''}" onclick="setReleaseTab('${c.key}')">${c.ic} ${E(c.nav)}</button>`).join('')}</div>`;
+  return head('relmgmt',(canCreateHere?`<button class="bt p" onclick="mNew('${catKey}')">New release</button>`:'')+
     `<button class="bt" onclick="exportReleaseGridCsv('${catKey}')">Export</button>`)+
+    tabs+
     (!cat.editable?`<div class="sec"><div class="mt">This list is read-only for everyone, Admin included — records here cannot be edited or deleted once created. ${isAdmin()?'As Admin you can still add new records.':'Ask an Admin if something needs to change.'}</div></div>`:'')+`
   <div class="sec c"><div class="b">
     <div class="fg">
@@ -1073,7 +1076,7 @@ function exportReleaseGridCsv(catKey){
 
 /* ═══ release detail ════════════════════ */
 function vRel(){
-  const r=R(openRel);if(!r)return vReleaseGrid('my_team');
+  const r=R(openRel);if(!r){releaseTab='my_team';return vReleaseGrid()}
   const ci=SI(r.cur),gate=STAGES[ci].gate;
   const[advOk,advWhy]=canAdvance(r);
   const[reqOk,reqWhy]=gate?canRequest(r,r.cur):[false,''];
@@ -1108,7 +1111,7 @@ function vRel(){
   const apl=appsFor(r.id);
 
   return `<div class="ph">
-    <button class="lk" style="margin-bottom:12px" onclick="go('${RC(r.category).view}')">← ${E(RC(r.category).nav)}</button>
+    <button class="lk" style="margin-bottom:12px" onclick="goRelTab('${r.category}')">← ${E(RC(r.category).nav)}</button>
     <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()} · <span class="tag">${E(RC(r.category).nav)}</span></div>
     <h1>${E(r.nm)}</h1><p>${E(r.desc)}</p>
     ${acts_?`<div class="acts">${acts_}</div>`:''}
@@ -1926,10 +1929,10 @@ function doDelRelease(rid){
   const r=R(rid);
   const v=document.getElementById('del-confirm').value.trim();
   if(v!==r.ref){document.getElementById('e-del').classList.add('on');return}
-  const backTo=RC(r.category).view;
+  const backTo=r.category;
   rels=rels.filter(x=>x.id!==rid);
   logAudit('Deleted release',null,r.ref,'—');
-  shut();go(backTo);toast(`${r.ref} deleted`);persist();
+  shut();goRelTab(backTo);toast(`${r.ref} deleted`);persist();
 }
 function mPull(){
   show(`<div class="h"><h3>Record a pull or applied change</h3><p>Every other active owner is alerted immediately.</p></div>
