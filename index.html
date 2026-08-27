@@ -166,6 +166,10 @@ td{padding:14px 20px;border-bottom:1px solid #F0F2F4;vertical-align:middle;font-
 tr:last-child td{border-bottom:0}
 tbody tr.k{cursor:pointer;transition:background .11s}
 tbody tr.k:hover{background:var(--sunk)}
+tbody tr.editing{cursor:default;background:var(--wait-bg)}
+tbody tr.editing td{padding:8px 10px}
+tbody tr.editing input,tbody tr.editing select{width:100%;font-size:12.5px;padding:6px 8px;
+  border:1px solid var(--line2);border-radius:6px;background:var(--card);font-family:var(--b)}
 .tw{overflow-x:auto}
 .tt{font-weight:600;font-size:13.5px;letter-spacing:-.008em}
 .rf{font-family:var(--m);font-size:11px;color:var(--mut2);letter-spacing:.03em;margin-top:1px}
@@ -301,12 +305,14 @@ const blankMilestones=()=>MILESTONES.map(m=>({key:m.key,owner:null,ideal:null,ac
   status:'notStarted',comments:'',approved:false,approvedBy:null,approvedOn:null}));
 
 /* ═══ release categories ═════════════════
-   Three tabs on one Release Management page, sharing identical columns —
-   only edit access differs. My Team Release: editable by Release Team/
-   Admin. New Release and BMS Release: read-only for everyone, Admin
-   included, once a record exists — enforced server-side too (see
-   enforce_release_locks in main.py), not just hidden in the UI. Admin's
-   only remaining privilege on the locked two is creating a new record. */
+   Three tabs on one Release Management page, all three showing the exact
+   same release records — there is no per-record category or separate
+   dataset any more. "editable" here describes the TAB, not the record:
+   viewing under My Team Release shows row-level edit/delete/create
+   controls; New Release and BMS Release show the identical rows read-only,
+   as plain reference views. Editing a release from any tab (or from its
+   detail page) changes the one shared record, so it's immediately visible
+   under all three tabs. */
 const RELEASE_CATEGORIES=[
  {key:'my_team',    nav:'My Team Release', ic:'📦', editable:true},
  {key:'new_release',nav:'New Release',      ic:'🆕', editable:false},
@@ -364,7 +370,7 @@ async function checkEmailStatus(){
     if(r.ok){const j=await r.json();emailConfigured=j.configured;emailFrom=j.from}}
   catch(e){}
 }
-const RELEASE_TEXT_FIELDS=['workstream','jira','po','scrum','bizOwner','financeUat'];
+const RELEASE_TEXT_FIELDS=['workstream','jira','po','scrum','bizOwner','financeUat','comments'];
 function applyState(s){
   users=s.users;comps=s.comps;groups=s.groups;rels=s.rels;apps_=s.apps_;
   notifs=s.notifs;acts=s.acts;audit=s.audit;tmpl=s.tmpl;uid=Math.max(uid,s.uid||0);
@@ -379,7 +385,6 @@ function applyState(s){
     RELEASE_TEXT_FIELDS.forEach(f=>{if(r[f]===undefined)r[f]=''});
     if(!Array.isArray(r.milestones))r.milestones=blankMilestones();
     else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
-    if(!RELEASE_CATEGORIES.some(c=>c.key===r.category))r.category='my_team';
   });
 }
 function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl,conflicts}}
@@ -473,15 +478,14 @@ let authUser=null;
 const hasPerm=k=>!!authUser&&(authUser.is_admin||authUser.permissions.includes(k));
 const canEdit=()=>hasPerm('create_release')||hasPerm('edit_release')||hasPerm('delete_release');
 const isAdmin=()=>!!authUser&&authUser.is_admin;
-// New Release and BMS Release are read-only for everyone, Admin included —
-// once a record exists in a locked category it cannot be edited, deleted,
-// or have its milestones/approvals/dates/comments changed by anyone.
-// Mirrors the unconditional server-side check in enforce_release_locks()
-// in main.py. Admin's one remaining privilege there is creating brand-new
-// records in these categories (see canCreateRelease below) — not editing
-// ones that already exist.
-const canEditRelease=r=>canEdit()&&RC(r.category).editable;
-const canCreateRelease=catKey=>hasPerm('create_release')&&(RC(catKey).editable||isAdmin());
+// A release's detail page is editable purely on permission — there is no
+// per-record read-only category any more, since all three release tabs
+// show the same records. "Editable" is a property of the currently
+// selected TAB (see canCreateRelease/vReleaseGrid), controlling whether
+// the grid offers row-level create/edit/delete controls, not a property
+// of the release itself.
+const canEditRelease=r=>canEdit();
+const canCreateRelease=catKey=>hasPerm('create_release')&&RC(catKey).editable;
 
 /* ═══ helpers ═══════════════════════════ */
 const E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -966,24 +970,27 @@ function vMine(){
 /* ═══ releases ══════════════════════════ */
 function setF(k,v){flt[k]=v;draw()}
 /* ═══ release grid (Excel-style, shared by all 3 categories) ══ */
-let rflt={q:'',sort:'planAsc',page:1};
+let rflt={q:'',sort:'nameAsc',page:1};
 const REL_PAGE_SIZE=20;
 let releaseTab='my_team';
 function setReleaseTab(key){releaseTab=key;rflt.page=1;draw()}
 function goRelTab(key){releaseTab=key;go('relmgmt')}
 function setRF(k,v){rflt[k]=v;rflt.page=1;draw()}
-function clearRF(){rflt={q:'',sort:'planAsc',page:1};draw()}
+function clearRF(){rflt={q:'',sort:'nameAsc',page:1};draw()}
+/* My Team Release, New Release, and BMS Release are the same rows — the
+   catKey argument only picks which tab's edit/read-only mode applies, it
+   no longer filters which records show. */
 function filteredReleases(catKey){
-  let rows=rels.filter(r=>r.category===catKey);
+  let rows=rels.slice();
   if(rflt.q){
     const q=rflt.q.toLowerCase();
     rows=rows.filter(r=>[r.nm,r.ref,r.jira,r.workstream,r.po,r.scrum,r.bizOwner,r.financeUat,r.desc,U(r.owner).nm]
       .filter(Boolean).join(' ').toLowerCase().includes(q));
   }
   rows=rows.slice().sort((a,b)=>{
-    if(rflt.sort==='planDesc')return (b.plan||'').localeCompare(a.plan||'');
-    if(rflt.sort==='nameAsc')return (a.nm||'').localeCompare(b.nm||'');
-    return (a.plan||'').localeCompare(b.plan||'');
+    if(rflt.sort==='nameDesc')return (b.nm||'').localeCompare(a.nm||'');
+    if(rflt.sort==='jiraAsc')return (a.jira||'').localeCompare(b.jira||'');
+    return (a.nm||'').localeCompare(b.nm||'');
   });
   return rows;
 }
@@ -1010,7 +1017,7 @@ function gridColumns(){
     if(m.approval)return ms.approved?'<span class="tick">✓ Approved</span>':'<span style="color:var(--mut)">Pending</span>';
     return stt(ms.status);
   }}));
-  cols.push({h:'Comments',w:110,cell:r=>r.cmts.length?`💬 ${r.cmts.length}`:'<span style="color:var(--mut2)">—</span>'});
+  cols.push({h:'Comments',w:180,cell:r=>r.comments?E(r.comments):'<span style="color:var(--mut2)">—</span>'});
   cols.push({h:'Developer Name',w:150,cell:r=>E(U(r.owner).nm)});
   return cols;
 }
@@ -1018,39 +1025,51 @@ function vReleaseGrid(){
   const catKey=releaseTab;
   const cat=RC(catKey);
   const canCreateHere=canCreateRelease(catKey);
+  const canEditHere=hasPerm('edit_release')&&cat.editable;
   const canDeleteHere=hasPerm('delete_release')&&cat.editable;
+  const showActionCol=canEditHere||canDeleteHere;
+  const showDraft=canCreateHere&&draftRelease;
   const all=filteredReleases(catKey);
   const totalPages=Math.max(1,Math.ceil(all.length/REL_PAGE_SIZE));
   if(rflt.page>totalPages)rflt.page=totalPages;
   const pageRows=all.slice((rflt.page-1)*REL_PAGE_SIZE,rflt.page*REL_PAGE_SIZE);
   const cols=gridColumns();
-  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(canDeleteHere?90:0);
+  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(showActionCol?170:0);
   const tabs=`<div class="seg" style="margin-top:16px">${RELEASE_CATEGORIES.map(c=>
     `<button class="${c.key===catKey?'on':''}" onclick="setReleaseTab('${c.key}')">${c.ic} ${E(c.nav)}</button>`).join('')}</div>`;
-  return head('relmgmt',(canCreateHere?`<button class="bt p" onclick="mNew('${catKey}')">New release</button>`:'')+
+  return head('relmgmt',(canCreateHere?`<button class="bt p" onclick="mNewRow()">New release</button>`:'')+
     `<button class="bt" onclick="exportReleaseGridCsv('${catKey}')">Export</button>`)+
     tabs+
-    (!cat.editable?`<div class="sec"><div class="mt">This list is read-only for everyone, Admin included — records here cannot be edited or deleted once created. ${isAdmin()?'As Admin you can still add new records.':'Ask an Admin if something needs to change.'}</div></div>`:'')+`
+    (!cat.editable?`<div class="sec"><div class="mt">Read-only view — same release data as My Team Release. Switch to the My Team Release tab to edit.</div></div>`:'')+`
   <div class="sec c"><div class="b">
     <div class="fg">
       <div><label>Search</label><input value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
         oninput="rflt.q=this.value;rflt.page=1;clearTimeout(window._rf);window._rf=setTimeout(draw,220)"></div>
       <div><label>Sort by</label><select onchange="setRF('sort',this.value)">
-        <option value="planAsc" ${rflt.sort==='planAsc'?'selected':''}>Planned date (earliest)</option>
-        <option value="planDesc" ${rflt.sort==='planDesc'?'selected':''}>Planned date (latest)</option>
-        <option value="nameAsc" ${rflt.sort==='nameAsc'?'selected':''}>Team name (A–Z)</option></select></div>
+        <option value="nameAsc" ${rflt.sort==='nameAsc'?'selected':''}>Team name (A–Z)</option>
+        <option value="nameDesc" ${rflt.sort==='nameDesc'?'selected':''}>Team name (Z–A)</option>
+        <option value="jiraAsc" ${rflt.sort==='jiraAsc'?'selected':''}>Jira # (A–Z)</option></select></div>
     </div>
     <div style="margin-top:14px"><button class="bt s" onclick="clearRF()">Clear filters</button></div>
   </div></div>
 
-  <div class="c"><div class="b flush">${pageRows.length?`
+  <div class="c"><div class="b flush">${(pageRows.length||showDraft)?`
     <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
     <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
-      ${canDeleteHere?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
-    <tbody>${pageRows.map(r=>`<tr class="k" onclick="openR('${r.id}')">
+      ${showActionCol?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
+    <tbody>
+      ${showDraft?renderEditRow(draftRelease,true):''}
+      ${pageRows.map(r=>{
+        if(editingRelId===r.id)return renderEditRow(r,false);
+        return `<tr class="k" onclick="openR('${r.id}')">
       ${cols.map(c=>`<td style="white-space:nowrap">${c.cell(r)}</td>`).join('')}
-      ${canDeleteHere?`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()"><button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button></td>`:''}
-    </tr>`).join('')}</tbody></table></div>
+      ${showActionCol?`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+        ${canEditHere?`<button class="bt s" onclick="editRelRow('${r.id}')">Edit</button>`:''}
+        ${canDeleteHere?`<button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button>`:''}
+      </td>`:''}
+    </tr>`;
+      }).join('')}
+    </tbody></table></div>
     <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?((rflt.page-1)*REL_PAGE_SIZE+1):0}–${(rflt.page-1)*REL_PAGE_SIZE+pageRows.length} of ${all.length}</span>
       <div style="display:flex;gap:8px;align-items:center">
@@ -1059,7 +1078,7 @@ function vReleaseGrid(){
         <button class="bt s" ${rflt.page>=totalPages?'disabled':''} onclick="rflt.page++;draw()">Next →</button>
       </div>
     </div>`
-    :`<div class="ept"><h4>No releases in ${E(cat.nav)}</h4><p>${canCreateHere?'Create one to get started.':'Nothing has been added to this category yet.'}</p></div>`}
+    :`<div class="ept"><h4>No releases yet</h4><p>${canCreateHere?'Create one to get started.':'Nothing has been added yet.'}</p></div>`}
   </div></div>`;
 }
 function exportReleaseGridCsv(catKey){
@@ -1111,8 +1130,8 @@ function vRel(){
   const apl=appsFor(r.id);
 
   return `<div class="ph">
-    <button class="lk" style="margin-bottom:12px" onclick="goRelTab('${r.category}')">← ${E(RC(r.category).nav)}</button>
-    <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()} · <span class="tag">${E(RC(r.category).nav)}</span></div>
+    <button class="lk" style="margin-bottom:12px" onclick="go('relmgmt')">← Release Management</button>
+    <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()}</div>
     <h1>${E(r.nm)}</h1><p>${E(r.desc)}</p>
     ${acts_?`<div class="acts">${acts_}</div>`:''}
   </div>
@@ -1868,53 +1887,91 @@ function doEditMilestone(rid,key){
   logAudit(`Updated milestone — ${c.name}`,rid,'—',STATES[m.status][0]);
   shut();draw();toast('Milestone updated');persist();
 }
-let newReleaseCategory='my_team';
-function mNew(catKey){
-  newReleaseCategory=catKey||'my_team';
-  show(`<div class="h"><h3>New release — ${E(RC(newReleaseCategory).nav)}</h3><p>The release enters at gate one, grooming session.</p></div>
-  <div class="b"><div class="fg">
-    <div><label>Team Name</label><input id="nn" placeholder="Order supersede lookup">
-      <div class="er" id="e-nn">A name is required.</div></div>
-    <div><label>Component</label><select id="nc">${comps.map(c=>`<option value="${c.id}">${E(c.nm)}</option>`).join('')}</select></div>
-    <div><label>Developer Name</label><select id="no">${users.filter(u=>u.role==='Release Management'&&u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
-    <div><label>Planned production date</label><input type="date" id="np"></div>
-    ${isAdmin()?`<div><label>Release Category</label><select id="nn-cat">
-      ${RELEASE_CATEGORIES.map(c=>`<option value="${c.key}" ${newReleaseCategory===c.key?'selected':''}>${E(c.nav)}</option>`).join('')}</select></div>`:''}
-    </div>
-    <div style="margin-top:16px"><label>Summary/Description</label>
-      <textarea id="nd" rows="3" placeholder="Described in business terms"></textarea></div>
-    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
-      <div style="font-family:var(--d);font-weight:600;font-size:13px;margin-bottom:12px">Workstream & stakeholders</div>
-      <div class="fg">
-        <div><label>Workstream</label><input id="n-ws" placeholder="e.g. Finance"></div>
-        <div><label>Jira #</label><input id="n-jira" placeholder="e.g. CD-1234"></div>
-        <div><label>PO</label><input id="n-po"></div>
-        <div><label>Scrum Master</label><input id="n-sm"></div>
-        <div><label>Business Owner</label><input id="n-bo"></div>
-        <div><label>Finance UAT Tester</label><input id="n-fut"></div>
-      </div>
-    </div></div>
-  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
-    <button class="bt p" onclick="doNew()">Create release</button></div>`);
+/* ═══ Excel-style inline row editing ═════
+   No modal, no popup — the "New release" button inserts a blank draft row
+   directly into the My Team Release grid, and an existing row's "Edit"
+   button turns that same row's cells into inputs, in place. Both paths
+   share renderEditRow()/saveRelRow() below. Only one row (draft or
+   existing) is ever being edited at a time. */
+let editingRelId=null, draftRelease=null;
+const MS_STATUS_KEYS=['notStarted','inProgress','completed','blocked'];
+function mNewRow(){
+  if(draftRelease)return;
+  draftRelease={nm:'',workstream:'',jira:'',desc:'',po:'',scrum:'',bizOwner:'',financeUat:'',
+    comments:'',owner:'',milestones:blankMilestones()};
+  editingRelId='draft';
+  draw();
 }
-function doNew(){
-  const nm=document.getElementById('nn').value.trim();
-  if(!nm){document.getElementById('e-nn').classList.add('on');return}
-  const catEl=document.getElementById('nn-cat');
-  const category=(isAdmin()&&catEl)?catEl.value:newReleaseCategory;
-  const r={id:nid('R'),ref:'REL-'+(1044+rels.length),nm,category,
-    comp:document.getElementById('nc').value,owner:document.getElementById('no').value,
-    desc:document.getElementById('nd').value.trim()||'No description given.',
-    plan:document.getElementById('np').value||null,actual:null,cur:'groom',st:blank('groom'),cmts:[],atts:[],
-    workstream:document.getElementById('n-ws').value.trim(),
-    jira:document.getElementById('n-jira').value.trim(),
-    po:document.getElementById('n-po').value.trim(),
-    scrum:document.getElementById('n-sm').value.trim(),
-    bizOwner:document.getElementById('n-bo').value.trim(),
-    financeUat:document.getElementById('n-fut').value.trim(),
-    milestones:blankMilestones()};
-  rels.unshift(r);logAudit('Created release',r.id,'—','Grooming session');
-  shut();openR(r.id);toast('Release created');persist();
+function editRelRow(rid){draftRelease=null;editingRelId=rid;draw()}
+function cancelRelEdit(){editingRelId=null;draftRelease=null;draw()}
+function renderEditRow(r,isDraft){
+  const devs=users.filter(u=>u.role==='Release Management'&&u.active);
+  const t=(id,val)=>`<td onclick="event.stopPropagation()"><input id="${id}" value="${E(val||'')}" style="width:100%;min-width:110px"></td>`;
+  let html=`<tr class="k editing">`;
+  html+=t('re-nm',r.nm);
+  html+=t('re-workstream',r.workstream);
+  html+=t('re-jira',r.jira);
+  html+=t('re-desc',r.desc);
+  html+=t('re-po',r.po);
+  html+=t('re-scrum',r.scrum);
+  html+=t('re-bizowner',r.bizOwner);
+  html+=t('re-financeuat',r.financeUat);
+  MILESTONES.forEach(m=>{
+    const ms=(r.milestones||[]).find(x=>x.key===m.key)||{status:'notStarted',approved:false};
+    html+=`<td onclick="event.stopPropagation()"><select id="re-ms-${m.key}" style="width:100%">${
+      m.approval
+        ?`<option value="0" ${!ms.approved?'selected':''}>Pending</option><option value="1" ${ms.approved?'selected':''}>Approved</option>`
+        :MS_STATUS_KEYS.map(k=>`<option value="${k}" ${ms.status===k?'selected':''}>${STATES[k][0]}</option>`).join('')
+    }</select></td>`;
+  });
+  html+=t('re-comments',r.comments);
+  html+=`<td onclick="event.stopPropagation()"><select id="re-owner" style="width:100%"><option value="">— none —</option>
+    ${devs.map(u=>`<option value="${u.id}" ${r.owner===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></td>`;
+  html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+    <button class="bt p s" onclick="saveRelRow('${isDraft?'draft':r.id}')">Save</button>
+    <button class="bt s" onclick="cancelRelEdit()">Cancel</button></td>`;
+  return html+'</tr>';
+}
+function saveRelRow(id){
+  const nm=document.getElementById('re-nm').value.trim();
+  if(!nm){toast('Team Name is required');return}
+  const vals={
+    nm,
+    workstream:document.getElementById('re-workstream').value.trim(),
+    jira:document.getElementById('re-jira').value.trim(),
+    desc:document.getElementById('re-desc').value.trim()||'No description given.',
+    po:document.getElementById('re-po').value.trim(),
+    scrum:document.getElementById('re-scrum').value.trim(),
+    bizOwner:document.getElementById('re-bizowner').value.trim(),
+    financeUat:document.getElementById('re-financeuat').value.trim(),
+    comments:document.getElementById('re-comments').value.trim(),
+    owner:document.getElementById('re-owner').value||null,
+  };
+  const msVals={};
+  MILESTONES.forEach(m=>{
+    const v=document.getElementById(`re-ms-${m.key}`).value;
+    msVals[m.key]=m.approval?{approved:v==='1'}:{status:v};
+  });
+  const applyMilestones=r=>r.milestones.forEach(m=>{
+    const v=msVals[m.key];if(!v)return;
+    if('approved' in v)m.approved=v.approved;if('status' in v)m.status=v.status;
+  });
+  if(id==='draft'){
+    const r={id:nid('R'),ref:'REL-'+(1044+rels.length),...vals,cur:'groom',st:blank('groom'),cmts:[],atts:[],
+      milestones:blankMilestones()};
+    applyMilestones(r);
+    rels.unshift(r);
+    logAudit('Created release',r.id,'—','Grooming session');
+    editingRelId=null;draftRelease=null;
+    draw();toast('Release created');persist();
+  }else{
+    const r=R(id);if(!r)return;
+    Object.assign(r,vals);
+    applyMilestones(r);
+    logAudit('Updated release',r.id,'—','—');
+    editingRelId=null;
+    draw();toast('Release updated');persist();
+  }
 }
 function mDelRelease(rid){
   const r=R(rid);
@@ -1929,10 +1986,9 @@ function doDelRelease(rid){
   const r=R(rid);
   const v=document.getElementById('del-confirm').value.trim();
   if(v!==r.ref){document.getElementById('e-del').classList.add('on');return}
-  const backTo=r.category;
   rels=rels.filter(x=>x.id!==rid);
   logAudit('Deleted release',null,r.ref,'—');
-  shut();goRelTab(backTo);toast(`${r.ref} deleted`);persist();
+  shut();go('relmgmt');toast(`${r.ref} deleted`);persist();
 }
 function mPull(){
   show(`<div class="h"><h3>Record a pull or applied change</h3><p>Every other active owner is alerted immediately.</p></div>
