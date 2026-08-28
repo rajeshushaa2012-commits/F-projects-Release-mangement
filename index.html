@@ -360,7 +360,7 @@ const CF_FIELDS=[
  {h:'Description',key:'description',w:280},
  {h:'Estimation',key:'estimation',w:100},
  {h:'Mode of release',key:'modeOfRelease',w:140},
- {h:'Release Month',key:'releaseMonth',w:130},
+ {h:'Release Month',key:'releaseMonth',w:130,type:'month'},
  {h:'Developers',key:'developers',w:150},
  {h:'Current Status',key:'currentStatus',w:160},
  {h:'SDD Review',key:'sddReview',w:130,type:'date'},
@@ -535,6 +535,16 @@ function fdShort(s){
   const d=new Date(s+'T00:00:00');
   if(isNaN(d.getTime()))return '—';
   return `${P2(d.getDate())}-${MON[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
+}
+/* "Jun-26" — month + 2-digit year only, no day. Matches an <input
+   type="month"> value ("YYYY-MM"), which has no day component to begin
+   with. */
+function fdMonth(s){
+  if(!s)return '—';
+  const parts=s.split('-');
+  const y=Number(parts[0]),m=Number(parts[1]);
+  if(!y||!m||m<1||m>12)return '—';
+  return `${MON[m-1]}-${String(y).slice(-2)}`;
 }
 const now=()=>new Date().toISOString().slice(0,16);
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');
@@ -1330,7 +1340,9 @@ function filteredConflicts(){
 function cfColumns(){
   return CF_FIELDS.map(f=>({h:f.h,w:f.w,cell:c=>{
     if(!c[f.key])return '<span style="color:var(--mut2)">—</span>';
-    return f.type==='date'?fdShort(c[f.key]):E(c[f.key]);
+    if(f.type==='date')return fdShort(c[f.key]);
+    if(f.type==='month')return fdMonth(c[f.key]);
+    return E(c[f.key]);
   }}));
 }
 function vConflicts(){
@@ -1365,7 +1377,7 @@ function vConflicts(){
       <div><label>Mode of release</label><select onchange="setCF('modeOfRelease',this.value)"><option value="all">All modes</option>
         ${modeValues.map(t=>`<option ${cflt.modeOfRelease===t?'selected':''}>${E(t)}</option>`).join('')}</select></div>
       <div><label>Release Month</label><select onchange="setCF('releaseMonth',this.value)"><option value="all">All months</option>
-        ${monthValues.map(t=>`<option ${cflt.releaseMonth===t?'selected':''}>${E(t)}</option>`).join('')}</select></div>
+        ${monthValues.map(t=>`<option value="${E(t)}" ${cflt.releaseMonth===t?'selected':''}>${E(fdMonth(t))}</option>`).join('')}</select></div>
       <div><label>Sort by</label><select onchange="setCF('sort',this.value)">
         <option value="default" ${cflt.sort==='default'?'selected':''}>Row order</option>
         <option value="wave" ${cflt.sort==='wave'?'selected':''}>Wave</option>
@@ -1426,8 +1438,9 @@ function cancelCflEdit(){editingCflId=null;draftConflict=null;draw()}
 function renderCflEditRow(c,isDraft){
   let html=`<tr class="editing"><td class="mono" style="font-size:12px;color:var(--mut2)">${isDraft?'—':''}</td>`;
   CF_FIELDS.forEach(f=>{
-    const type=f.type==='date'?'date':'text';
-    html+=`<td onclick="event.stopPropagation()"><input type="${type}" id="cf-e-${f.key}" value="${E(c[f.key]||'')}" style="width:100%;min-width:${type==='date'?'135':'100'}px"></td>`;
+    const type=(f.type==='date'||f.type==='month')?f.type:'text';
+    const w=type==='text'?100:135;
+    html+=`<td onclick="event.stopPropagation()"><input type="${type}" id="cf-e-${f.key}" value="${E(c[f.key]||'')}" style="width:100%;min-width:${w}px"></td>`;
   });
   html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
     <button class="bt p s" onclick="saveCflRow('${isDraft?'draft':c.id}')">Save</button>
