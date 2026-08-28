@@ -363,14 +363,14 @@ const CF_FIELDS=[
  {h:'Release Month',key:'releaseMonth',w:130},
  {h:'Developers',key:'developers',w:150},
  {h:'Current Status',key:'currentStatus',w:160},
- {h:'SDD Review',key:'sddReview',w:130},
- {h:'Development',key:'development',w:130},
- {h:'Unit Testing',key:'unitTesting',w:130},
- {h:'Demo',key:'demo',w:120},
- {h:'Code Review',key:'codeReview',w:130},
- {h:'UAT',key:'uat',w:110},
- {h:'KT to Support',key:'ktToSupport',w:130},
- {h:'Prod',key:'prod',w:120},
+ {h:'SDD Review',key:'sddReview',w:130,type:'date'},
+ {h:'Development',key:'development',w:130,type:'date'},
+ {h:'Unit Testing',key:'unitTesting',w:130,type:'date'},
+ {h:'Demo',key:'demo',w:120,type:'date'},
+ {h:'Code Review',key:'codeReview',w:130,type:'date'},
+ {h:'UAT',key:'uat',w:110,type:'date'},
+ {h:'KT to Support',key:'ktToSupport',w:130,type:'date'},
+ {h:'Prod',key:'prod',w:120,type:'date'},
 ];
 let cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',sort:'default',page:1};
 const CF_PAGE_SIZE=15;
@@ -526,6 +526,16 @@ const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','De
 const P2=n=>String(n).padStart(2,'0');
 function fdt(s){if(!s)return '—';const d=new Date(s);return `${P2(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}, ${P2(d.getHours())}:${P2(d.getMinutes())}`}
 function fd(s){if(!s)return '—';const d=new Date(s);return `${P2(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}`}
+/* "25-Jun-26" — matches the Project Tracker Excel's date format. Parsed
+   with an explicit local-midnight time so a plain YYYY-MM-DD value (as
+   produced by <input type="date">) never shifts a day under UTC-offset
+   timezones. */
+function fdShort(s){
+  if(!s)return '—';
+  const d=new Date(s+'T00:00:00');
+  if(isNaN(d.getTime()))return '—';
+  return `${P2(d.getDate())}-${MON[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
+}
 const now=()=>new Date().toISOString().slice(0,16);
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');
   clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('on'),2700)}
@@ -1318,7 +1328,10 @@ function filteredConflicts(){
    renderCflEditRow) the inline editor, so table and edit columns can't
    drift apart. */
 function cfColumns(){
-  return CF_FIELDS.map(f=>({h:f.h,w:f.w,cell:c=>c[f.key]?E(c[f.key]):'<span style="color:var(--mut2)">—</span>'}));
+  return CF_FIELDS.map(f=>({h:f.h,w:f.w,cell:c=>{
+    if(!c[f.key])return '<span style="color:var(--mut2)">—</span>';
+    return f.type==='date'?fdShort(c[f.key]):E(c[f.key]);
+  }}));
 }
 function vConflicts(){
   const canEditHere=hasPerm('edit_conflict');
@@ -1413,7 +1426,8 @@ function cancelCflEdit(){editingCflId=null;draftConflict=null;draw()}
 function renderCflEditRow(c,isDraft){
   let html=`<tr class="editing"><td class="mono" style="font-size:12px;color:var(--mut2)">${isDraft?'—':''}</td>`;
   CF_FIELDS.forEach(f=>{
-    html+=`<td onclick="event.stopPropagation()"><input id="cf-e-${f.key}" value="${E(c[f.key]||'')}" style="width:100%;min-width:100px"></td>`;
+    const type=f.type==='date'?'date':'text';
+    html+=`<td onclick="event.stopPropagation()"><input type="${type}" id="cf-e-${f.key}" value="${E(c[f.key]||'')}" style="width:100%;min-width:${type==='date'?'135':'100'}px"></td>`;
   });
   html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
     <button class="bt p s" onclick="saveCflRow('${isDraft?'draft':c.id}')">Save</button>
