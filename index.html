@@ -344,7 +344,16 @@ const ENVIRONMENTS=['Dev','Test','UAT','Prod'];
 const CF_STATUSES=['Open','In Progress','Resolved','Closed'];
 const CF_STATUS_CLS={Open:'s-bad',['In Progress']:'s-wait',Resolved:'s-ok',Closed:'s-none'};
 const CF_SEV_CLS={Low:'s-none',Medium:'s-wait',High:'s-bad',Critical:'s-bad'};
-let cflt={q:'',rel:'all',objType:'all',objName:'',env:'all',severity:'all',
+/* Project tabs — the exact sheet names from Project Tracker_2026.xlsx,
+   spelling/capitalization preserved as-is (e.g. "Ar Finance Extn"). Each
+   conflict belongs to exactly one project; unlike Release Management's
+   tabs, these are genuinely separate subsets of data, not shared views. */
+const PROJECT_NAMES=['AR Finance Base','Ar Finance Extn','Digital-Service Ops','Supply Chain',
+  'POA','Zenith','PG Quote to Order','EPROC','Release Team'];
+let conflictProject=PROJECT_NAMES[0];
+let editingCflId=null, draftConflict=null;
+function setConflictTab(name){conflictProject=name;cflt.page=1;editingCflId=null;draftConflict=null;draw()}
+let cflt={q:'',objType:'all',objName:'',env:'all',severity:'all',
   status:'all',assignedTo:'all',conflictType:'all',sort:'idDesc',page:1};
 const CF_PAGE_SIZE=15;
 
@@ -386,6 +395,8 @@ function applyState(s){
     if(!Array.isArray(r.milestones))r.milestones=blankMilestones();
     else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
   });
+  // Backfill Project Name onto conflicts saved before project tabs existed.
+  conflicts.forEach(c=>{if(!PROJECT_NAMES.includes(c.project))c.project=PROJECT_NAMES[0]});
 }
 function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl,conflicts}}
 async function persist(){
@@ -592,7 +603,7 @@ const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'
  mine:['My pending actions','Only the items waiting on you.'],
  relmgmt:['Release Management','One shared table structure — every field from Release.xlsx as its own column. My Team Release is editable; New Release and BMS Release are read-only reference lists.'],
  rel:['Release detail',''],cal:['Release calendar','Planned production releases by date.'],
- cft:['Conflict Tracker','Track conflicts between releases and development changes.'],
+ cft:['Conflict Tracker','Organized by project, matching Project Tracker_2026.xlsx.'],
  chg:['Change activity','Who pulled or applied changes, and who was told.'],
  mail:['Compose email','Send a one-off message to any address, right now.'],
  note:['Notification history','Every message the application has sent.'],
@@ -1253,11 +1264,13 @@ function vRel(){
 
 /* ═══ conflict tracker ══════════════════ */
 function setCF(k,v){cflt[k]=v;cflt.page=1;draw()}
-function clearCF(){cflt={q:'',rel:'all',objType:'all',objName:'',env:'all',severity:'all',
+function clearCF(){cflt={q:'',objType:'all',objName:'',env:'all',severity:'all',
   status:'all',assignedTo:'all',conflictType:'all',sort:'idDesc',page:1};draw()}
+/* Project tabs ARE separate datasets here (unlike Release Management's
+   tabs) — a conflict belongs to exactly one project. */
 function filteredConflicts(){
   return conflicts.filter(c=>{
-    if(cflt.rel!=='all'&&c.rel!==cflt.rel)return false;
+    if(c.project!==conflictProject)return false;
     if(cflt.objType!=='all'&&c.objectType!==cflt.objType)return false;
     if(cflt.objName&&!(c.objectName||'').toLowerCase().includes(cflt.objName.toLowerCase()))return false;
     if(cflt.env!=='all'&&c.environment!==cflt.env)return false;
@@ -1267,7 +1280,7 @@ function filteredConflicts(){
     if(cflt.conflictType!=='all'&&c.conflictType!==cflt.conflictType)return false;
     if(cflt.q){
       const q=cflt.q.toLowerCase();
-      const hay=[c.id,c.summary,c.description,c.objectName,c.jira].filter(Boolean).join(' ').toLowerCase();
+      const hay=[c.id,c.summary,c.description,c.objectName].filter(Boolean).join(' ').toLowerCase();
       if(!hay.includes(q))return false;
     }
     return true;
@@ -1278,18 +1291,56 @@ function filteredConflicts(){
     return (b.identifiedDate||'').localeCompare(a.identifiedDate||'');
   });
 }
+/* 11 columns, exact order — matches the fields you specified since
+   Project Tracker_2026.xlsx has no conflict-specific columns of its own.
+   Shared by the grid, CSV export, and (via renderCflEditRow) the inline
+   editor, so table columns and edit fields can't drift apart. */
+function cfColumns(){
+  return [
+   {h:'Conflict Type',w:160,cell:c=>E(c.conflictType||'—')},
+   {h:'Conflict Description',w:260,cell:c=>c.description?E(c.description):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Object Type',w:120,cell:c=>`<span class="tag">${E(c.objectType||'—')}</span>`},
+   {h:'Object Name',w:160,cell:c=>c.objectName?E(c.objectName):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Environment',w:110,cell:c=>E(c.environment||'—')},
+   {h:'Severity',w:120,cell:c=>`<span class="stt ${CF_SEV_CLS[c.severity]||'s-none'}"><i></i>${E(c.severity||'—')}</span>`},
+   {h:'Status',w:140,cell:c=>`<span class="stt ${CF_STATUS_CLS[c.status]||'s-none'}"><i></i>${E(c.status||'—')}</span>`},
+   {h:'Assigned To',w:140,cell:c=>c.assignedTo?E(U(c.assignedTo).nm):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Resolution',w:200,cell:c=>c.resolution?E(c.resolution):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Comments',w:180,cell:c=>c.comments?E(c.comments):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Attachments',w:220,cell:c=>cfAttCell(c)},
+  ];
+}
+function cfAttCell(c){
+  const linked=files.filter(f=>f.conflict_id===c.id);
+  const canDownload=hasPerm('download_files');
+  return `${linked.map(f=>`<div style="white-space:nowrap">${canDownload
+      ?`<button class="lk" style="font-size:12px" onclick="event.stopPropagation();downloadFile(${f.id})">📎 ${E(f.original_name)}</button>`
+      :`<span style="font-size:12px">📎 ${E(f.original_name)}</span>`}</div>`).join('')}
+    ${hasPerm('upload_files')?`<button class="bt s" style="margin-top:4px" onclick="event.stopPropagation();mUploadFile({conflictId:'${c.id}'})">Upload</button>`:''}`;
+}
 function vConflicts(){
+  const canEditHere=hasPerm('edit_conflict');
+  const canDeleteHere=hasPerm('delete_conflict');
+  const canCreateHere=hasPerm('create_conflict');
+  const showActionCol=canEditHere||canDeleteHere;
+  const showDraft=canCreateHere&&draftConflict;
   const all=filteredConflicts();
   const totalPages=Math.max(1,Math.ceil(all.length/CF_PAGE_SIZE));
   if(cflt.page>totalPages)cflt.page=totalPages;
   const pageRows=all.slice((cflt.page-1)*CF_PAGE_SIZE,cflt.page*CF_PAGE_SIZE);
-  const openCount=conflicts.filter(c=>c.status==='Open').length;
-  const criticalCount=conflicts.filter(c=>c.severity==='Critical'&&c.status!=='Closed').length;
+  const projectConflicts=conflicts.filter(c=>c.project===conflictProject);
+  const openCount=projectConflicts.filter(c=>c.status==='Open').length;
+  const criticalCount=projectConflicts.filter(c=>c.severity==='Critical'&&c.status!=='Closed').length;
+  const cols=cfColumns();
+  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(showActionCol?170:0);
+  const projTabs=`<div class="seg" style="margin-top:16px;overflow-x:auto;max-width:100%">${PROJECT_NAMES.map(p=>
+    `<button style="white-space:nowrap;flex:0 0 auto" class="${p===conflictProject?'on':''}" onclick="setConflictTab('${E(p)}')">${E(p)}</button>`).join('')}</div>`;
 
-  return head('cft',(hasPerm('create_conflict')?`<button class="bt p" onclick="mNewConflict()">New conflict</button>`:'')+
-    `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+`
+  return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Conflict</button>`:'')+
+    `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+
+    projTabs+`
   <div class="sec"><div class="stats">
-    <div class="stat"><div class="l">Total conflicts</div><div class="n">${conflicts.length}</div><div class="h">tracked</div></div>
+    <div class="stat"><div class="l">Total conflicts</div><div class="n">${projectConflicts.length}</div><div class="h">in ${E(conflictProject)}</div></div>
     <div class="stat"><div class="l">Open</div><div class="n ${openCount?'w':''}">${openCount}</div><div class="h">need attention</div></div>
     <div class="stat"><div class="l">Critical</div><div class="n ${criticalCount?'s':'g'}">${criticalCount}</div><div class="h">${criticalCount?'unresolved':'none open'}</div></div>
     <div class="stat"><div class="l">Showing</div><div class="n">${all.length}</div><div class="h">match current filters</div></div>
@@ -1297,10 +1348,8 @@ function vConflicts(){
 
   <div class="sec c"><div class="b">
     <div class="fg">
-      <div><label>Search</label><input value="${E(cflt.q)}" placeholder="ID, summary, object, Jira #"
+      <div><label>Search</label><input value="${E(cflt.q)}" placeholder="ID, summary, object"
         oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(draw,220)"></div>
-      <div><label>Team Name</label><select onchange="setCF('rel',this.value)"><option value="all">All releases</option>
-        ${rels.map(r=>`<option value="${r.id}" ${cflt.rel===r.id?'selected':''}>${E(r.nm)}</option>`).join('')}</select></div>
       <div><label>Object Type</label><select onchange="setCF('objType',this.value)"><option value="all">All object types</option>
         ${OBJECT_TYPES.map(t=>`<option ${cflt.objType===t?'selected':''}>${t}</option>`).join('')}</select></div>
       <div><label>Environment</label><select onchange="setCF('env',this.value)"><option value="all">All environments</option>
@@ -1324,23 +1373,23 @@ function vConflicts(){
     <div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>
   </div></div>
 
-  <div class="c"><div class="b flush">${pageRows.length?`<div class="tw"><table>
-    <thead><tr><th>Conflict Type</th><th>Conflict Description</th><th>Object Type</th><th>Object Name</th><th>Environment</th>
-      <th>Severity</th><th>Status</th><th>Assigned To</th><th>Resolution</th><th>Comments</th><th>Attachments</th><th></th></tr></thead>
-    <tbody>${pageRows.map(c=>`<tr class="k" onclick="mEditConflict('${c.id}')">
-      <td>${E(c.conflictType||'—')}</td>
-      <td style="max-width:260px">${c.description?E(c.description):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td><span class="tag">${E(c.objectType||'—')}</span></td>
-      <td>${c.objectName?E(c.objectName):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td>${E(c.environment||'—')}</td>
-      <td><span class="stt ${CF_SEV_CLS[c.severity]||'s-none'}"><i></i>${E(c.severity||'—')}</span></td>
-      <td><span class="stt ${CF_STATUS_CLS[c.status]||'s-none'}"><i></i>${E(c.status||'—')}</span></td>
-      <td>${c.assignedTo?E(U(c.assignedTo).nm):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td style="max-width:180px">${c.resolution?E(c.resolution):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td style="max-width:160px">${c.comments?E(c.comments):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td>${files.filter(f=>f.conflict_id===c.id).length?`📎 ${files.filter(f=>f.conflict_id===c.id).length}`:'<span style="color:var(--mut2)">—</span>'}</td>
-      <td style="text-align:right">${hasPerm('delete_conflict')?`<button class="bt s d" onclick="event.stopPropagation();mDelConflict('${c.id}')">Delete</button>`:''}</td>
-    </tr>`).join('')}</tbody></table></div>
+  <div class="c"><div class="b flush">${(pageRows.length||showDraft)?`
+    <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
+    <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
+      ${showActionCol?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
+    <tbody>
+      ${showDraft?renderCflEditRow(draftConflict,true):''}
+      ${pageRows.map(c=>{
+        if(editingCflId===c.id)return renderCflEditRow(c,false);
+        return `<tr>
+      ${cols.map(col=>`<td style="white-space:nowrap">${col.cell(c)}</td>`).join('')}
+      ${showActionCol?`<td style="text-align:right;white-space:nowrap">
+        ${canEditHere?`<button class="bt s" onclick="editCflRow('${c.id}')">Edit</button>`:''}
+        ${canDeleteHere?`<button class="bt s d" onclick="mDelConflict('${c.id}')">Delete</button>`:''}
+      </td>`:''}
+    </tr>`;
+      }).join('')}
+    </tbody></table></div>
     <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?((cflt.page-1)*CF_PAGE_SIZE+1):0}–${(cflt.page-1)*CF_PAGE_SIZE+pageRows.length} of ${all.length}</span>
       <div style="display:flex;gap:8px;align-items:center">
@@ -1352,103 +1401,73 @@ function vConflicts(){
     :'<div class="ept"><h4>No conflicts match</h4><p>Adjust the filters above, or record a new conflict to get started.</p></div>'}
   </div></div>`;
 }
-function mNewConflict(){
-  show(`<div class="h"><h3>New conflict</h3><p>Record a conflict between releases or development changes.</p></div>
-  <div class="b">
-    <div style="margin-bottom:16px"><label>Team Name (release reference — optional)</label><select id="cf-rel"><option value="">— none —</option>
-      ${rels.map(r=>`<option value="${r.id}">${E(r.nm)} (${r.ref})</option>`).join('')}</select></div>
-    <div class="fg">
-    <div><label>Conflict Type</label><select id="cf-ctype">${CONFLICT_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-    <div><label>Object Type</label><select id="cf-otype">${OBJECT_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-    <div><label>Object Name</label><input id="cf-oname" placeholder="e.g. CUSTOMER_FORM.fmb"></div>
-    <div><label>Environment</label><select id="cf-env">${ENVIRONMENTS.map(t=>`<option>${t}</option>`).join('')}</select></div>
-    <div><label>Severity</label><select id="cf-sev">${SEVERITIES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-    <div><label>Status</label><select id="cf-status">${CF_STATUSES.map(t=>`<option>${t}</option>`).join('')}</select></div>
-    <div><label>Assigned To</label><select id="cf-assigned"><option value="">— none —</option>
-      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}">${E(u.nm)}</option>`).join('')}</select></div>
-  </div>
-  <div style="margin-top:16px"><label>Conflict Description</label><textarea id="cf-desc" rows="3" placeholder="What is conflicting, and why"></textarea>
-    <div class="er" id="e-cf-summary">A description is required.</div></div>
-  </div>
-  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
-    <button class="bt p" onclick="doNewConflict()">Create conflict</button></div>`);
+/* ═══ Excel-style inline conflict editing ═
+   Same pattern as Release Management's inline row editing — no popup.
+   "+ Add Conflict" inserts a blank draft row into the current project's
+   grid; an existing row's "Edit" button turns that row's cells into
+   inputs in place. Attachments stay a live action in their own column
+   regardless of edit mode (uploading commits immediately via its own
+   small file-picker modal, not part of the row's Save). */
+function mNewConflictRow(){
+  if(draftConflict)return;
+  draftConflict={conflictType:CONFLICT_TYPES[0],description:'',objectType:OBJECT_TYPES[0],objectName:'',
+    environment:ENVIRONMENTS[0],severity:SEVERITIES[0],status:CF_STATUSES[0],assignedTo:'',resolution:'',comments:''};
+  editingCflId='draft';
+  draw();
 }
-function doNewConflict(){
-  const description=document.getElementById('cf-desc').value.trim();
-  if(!description){document.getElementById('e-cf-summary').classList.add('on');return}
-  const c={
-    id:nid('CFL-'),
-    rel:document.getElementById('cf-rel').value||null,
-    summary:description,
-    conflictType:document.getElementById('cf-ctype').value,
-    objectType:document.getElementById('cf-otype').value,
-    objectName:document.getElementById('cf-oname').value.trim(),
-    environment:document.getElementById('cf-env').value,
-    description,
-    identifiedDate:now().slice(0,10),
-    identifiedBy:me,
-    severity:document.getElementById('cf-sev').value,
-    status:document.getElementById('cf-status').value,
-    assignedTo:document.getElementById('cf-assigned').value||null,
-    resolution:'',resolutionDate:null,comments:'',atts:[]
+function editCflRow(id){draftConflict=null;editingCflId=id;draw()}
+function cancelCflEdit(){editingCflId=null;draftConflict=null;draw()}
+function renderCflEditRow(c,isDraft){
+  const sel=(id,opts,cur)=>`<td onclick="event.stopPropagation()"><select id="${id}" style="width:100%">
+    ${opts.map(t=>`<option ${cur===t?'selected':''}>${t}</option>`).join('')}</select></td>`;
+  const t=(id,val)=>`<td onclick="event.stopPropagation()"><input id="${id}" value="${E(val||'')}" style="width:100%;min-width:110px"></td>`;
+  let html=`<tr class="editing">`;
+  html+=sel('cf-e-ctype',CONFLICT_TYPES,c.conflictType);
+  html+=t('cf-e-desc',c.description);
+  html+=sel('cf-e-otype',OBJECT_TYPES,c.objectType);
+  html+=t('cf-e-oname',c.objectName);
+  html+=sel('cf-e-env',ENVIRONMENTS,c.environment);
+  html+=sel('cf-e-sev',SEVERITIES,c.severity);
+  html+=sel('cf-e-status',CF_STATUSES,c.status);
+  html+=`<td onclick="event.stopPropagation()"><select id="cf-e-assigned" style="width:100%"><option value="">— none —</option>
+    ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${c.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></td>`;
+  html+=t('cf-e-res',c.resolution);
+  html+=t('cf-e-comments',c.comments);
+  html+=`<td onclick="event.stopPropagation()">${isDraft?'<span style="color:var(--mut2);font-size:12px">Save first to attach files</span>':cfAttCell(c)}</td>`;
+  html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+    <button class="bt p s" onclick="saveCflRow('${isDraft?'draft':c.id}')">Save</button>
+    <button class="bt s" onclick="cancelCflEdit()">Cancel</button></td>`;
+  return html+'</tr>';
+}
+function saveCflRow(id){
+  const description=document.getElementById('cf-e-desc').value.trim();
+  if(!description){toast('Conflict Description is required');return}
+  const vals={
+    conflictType:document.getElementById('cf-e-ctype').value,
+    description,summary:description,
+    objectType:document.getElementById('cf-e-otype').value,
+    objectName:document.getElementById('cf-e-oname').value.trim(),
+    environment:document.getElementById('cf-e-env').value,
+    severity:document.getElementById('cf-e-sev').value,
+    status:document.getElementById('cf-e-status').value,
+    assignedTo:document.getElementById('cf-e-assigned').value||null,
+    resolution:document.getElementById('cf-e-res').value.trim(),
+    comments:document.getElementById('cf-e-comments').value.trim(),
   };
-  conflicts.unshift(c);
-  logAudit(`Created conflict — ${description.slice(0,60)}`,null,'—',c.status);
-  shut();draw();toast('Conflict recorded');persist();
-}
-function mEditConflict(id){
-  const c=CF(id);if(!c)return;
-  const canWrite=hasPerm('edit_conflict');
-  const linkedFiles=files.filter(f=>f.conflict_id===id);
-  show(`<div class="h"><h3>Edit conflict</h3><p>${E(c.description||c.summary||'')}</p></div>
-  <div class="b">
-    <div style="margin-bottom:16px"><label>Team Name (release reference — optional)</label><select id="cf-rel" ${canWrite?'':'disabled'}><option value="">— none —</option>
-      ${rels.map(r=>`<option value="${r.id}" ${c.rel===r.id?'selected':''}>${E(r.nm)} (${r.ref})</option>`).join('')}</select></div>
-    <div class="fg">
-    <div><label>Conflict Type</label><select id="cf-ctype" ${canWrite?'':'disabled'}>${CONFLICT_TYPES.map(t=>`<option ${c.conflictType===t?'selected':''}>${t}</option>`).join('')}</select></div>
-    <div><label>Object Type</label><select id="cf-otype" ${canWrite?'':'disabled'}>${OBJECT_TYPES.map(t=>`<option ${c.objectType===t?'selected':''}>${t}</option>`).join('')}</select></div>
-    <div><label>Object Name</label><input id="cf-oname" value="${E(c.objectName||'')}" ${canWrite?'':'disabled'}></div>
-    <div><label>Environment</label><select id="cf-env" ${canWrite?'':'disabled'}>${ENVIRONMENTS.map(t=>`<option ${c.environment===t?'selected':''}>${t}</option>`).join('')}</select></div>
-    <div><label>Severity</label><select id="cf-sev" ${canWrite?'':'disabled'}>${SEVERITIES.map(t=>`<option ${c.severity===t?'selected':''}>${t}</option>`).join('')}</select></div>
-    <div><label>Status</label><select id="cf-status" ${canWrite?'':'disabled'}>${CF_STATUSES.map(t=>`<option ${c.status===t?'selected':''}>${t}</option>`).join('')}</select></div>
-    <div><label>Assigned To</label><select id="cf-assigned" ${canWrite?'':'disabled'}><option value="">— none —</option>
-      ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${c.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
-  </div>
-  <div style="margin-top:16px"><label>Conflict Description</label><textarea id="cf-desc" rows="3" ${canWrite?'':'disabled'}>${E(c.description||'')}</textarea></div>
-  <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
-    <div style="font-family:var(--d);font-weight:600;font-size:13px;margin-bottom:12px">Resolution</div>
-    <div class="fg"><div><label>Resolution date</label><input type="date" id="cf-resdate" value="${E(c.resolutionDate||'')}" ${canWrite?'':'disabled'}></div></div>
-    <div style="margin-top:12px"><label>Resolution</label><textarea id="cf-res" rows="2" ${canWrite?'':'disabled'}>${E(c.resolution||'')}</textarea></div>
-  </div>
-  <div style="margin-top:14px"><label>Comments</label><textarea id="cf-comments" rows="2" ${canWrite?'':'disabled'}>${E(c.comments||'')}</textarea></div>
-  <div style="margin-top:14px"><label>Attachments</label>
-    <div>${linkedFiles.length?linkedFiles.map(f=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0">
-      <span class="mono" style="font-size:12px">${E(f.original_name)} <span style="color:var(--mut2)">(${fileSize(f.size_bytes)})</span></span>
-      ${hasPerm('download_files')?`<button class="bt s" onclick="downloadFile(${f.id})">Download</button>`:''}
-      </div>`).join(''):'<span style="color:var(--mut)">None</span>'}</div>
-    ${hasPerm('upload_files')?`<button class="bt s" style="margin-top:8px" onclick="mUploadFile({conflictId:'${id}'})">Upload attachment</button>`:''}
-  </div>
-  </div>
-  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
-    ${canWrite?`<button class="bt p" onclick="doEditConflict('${id}')">Save</button>`:''}</div>`);
-}
-function doEditConflict(id){
-  const c=CF(id);if(!c)return;
-  c.rel=document.getElementById('cf-rel').value||null;
-  c.conflictType=document.getElementById('cf-ctype').value;
-  c.objectType=document.getElementById('cf-otype').value;
-  c.objectName=document.getElementById('cf-oname').value.trim();
-  c.environment=document.getElementById('cf-env').value;
-  c.severity=document.getElementById('cf-sev').value;
-  c.status=document.getElementById('cf-status').value;
-  c.assignedTo=document.getElementById('cf-assigned').value||null;
-  c.description=document.getElementById('cf-desc').value.trim();
-  c.summary=c.description;
-  c.resolutionDate=document.getElementById('cf-resdate').value||null;
-  c.resolution=document.getElementById('cf-res').value.trim();
-  c.comments=document.getElementById('cf-comments').value.trim();
-  logAudit(`Updated conflict — ${c.id}`,null,'—',c.status);
-  shut();draw();toast('Conflict updated');persist();
+  if(id==='draft'){
+    const c={id:nid('CFL-'),project:conflictProject,rel:null,
+      identifiedDate:now().slice(0,10),identifiedBy:me,resolutionDate:null,atts:[],...vals};
+    conflicts.unshift(c);
+    logAudit(`Created conflict — ${description.slice(0,60)}`,null,'—',c.status);
+    editingCflId=null;draftConflict=null;
+    draw();toast('Conflict recorded');persist();
+  }else{
+    const c=CF(id);if(!c)return;
+    Object.assign(c,vals);
+    logAudit(`Updated conflict — ${c.id}`,null,'—',c.status);
+    editingCflId=null;
+    draw();toast('Conflict updated');persist();
+  }
 }
 function mDelConflict(id){
   const c=CF(id);if(!c)return;
@@ -1463,14 +1482,14 @@ function doDelConflict(id){
   shut();draw();toast('Conflict deleted');persist();
 }
 function exportConflictsCsv(){
-  const rows=[['Conflict Type','Conflict Description','Object Type','Object Name','Environment','Severity','Status',
-    'Assigned To','Resolution','Comments','Attachments']];
-  conflicts.forEach(c=>rows.push([c.conflictType||'',c.description||c.summary||'',c.objectType||'',c.objectName||'',
-    c.environment||'',c.severity||'',c.status||'',c.assignedTo?U(c.assignedTo).nm:'',c.resolution||'',c.comments||'',
-    files.filter(f=>f.conflict_id===c.id).length]));
+  const cols=cfColumns();
+  const rows=[cols.map(c=>c.h)];
+  filteredConflicts().forEach(c=>rows.push(cols.map(col=>{
+    const div=document.createElement('div');div.innerHTML=col.cell(c);return div.textContent.trim();
+  })));
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
-    a.href=u;a.download='conflict-tracker.csv';a.click();URL.revokeObjectURL(u);toast('Conflicts exported')}
+    a.href=u;a.download=`${conflictProject}-conflicts.csv`;a.click();URL.revokeObjectURL(u);toast('Conflicts exported')}
   catch(e){navigator.clipboard?.writeText(csv);toast('Copied to clipboard')}
 }
 
@@ -1530,7 +1549,6 @@ async function doUploadFile(conflictId){
     if(!res.ok){toast(j.detail||'Upload failed');return}
     shut();toast('File uploaded');
     loadFiles();
-    setTimeout(()=>mEditConflict(conflictId),150);
   }catch(e){btn.disabled=false;btn.textContent='Upload';toast('Could not reach the server')}
 }
 function downloadFile(id){window.open(`/api/files/${id}/download`,'_blank')}
