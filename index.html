@@ -334,27 +334,45 @@ let acts=[];
 let audit=[];
 let tmpl=[];
 let conflicts=[]; const CF=id=>conflicts.find(c=>c.id===id);
-let files=[]; // loaded on demand via loadFiles() — real uploaded files, not part of the state blob
 
-/* ═══ conflict tracker (Phase 4) ═════════ */
-const OBJECT_TYPES=['SQL','PL/SQL','FMB','Oracle Reports','Other'];
-const CONFLICT_TYPES=['Object overlap','Code merge conflict','Data conflict','Environment conflict','Deployment sequencing','Other'];
-const SEVERITIES=['Low','Medium','High','Critical'];
-const ENVIRONMENTS=['Dev','Test','UAT','Prod'];
-const CF_STATUSES=['Open','In Progress','Resolved','Closed'];
-const CF_STATUS_CLS={Open:'s-bad',['In Progress']:'s-wait',Resolved:'s-ok',Closed:'s-none'};
-const CF_SEV_CLS={Low:'s-none',Medium:'s-wait',High:'s-bad',Critical:'s-bad'};
+/* ═══ conflict tracker → project tracker ═
+   Rebuilt to match Project Tracker_2026.xlsx exactly: 18 columns per row
+   (Sl.no is a computed row number, not stored data — the other 17 map
+   1:1 to CF_FIELDS below), organized into project-wise tabs using the
+   workbook's own sheet names. No conflict-specific fields (Severity,
+   Object Type, Resolution, etc.) — those belonged to an earlier, now
+   discarded design. */
 /* Project tabs — the exact sheet names from Project Tracker_2026.xlsx,
    spelling/capitalization preserved as-is (e.g. "Ar Finance Extn"). Each
-   conflict belongs to exactly one project; unlike Release Management's
-   tabs, these are genuinely separate subsets of data, not shared views. */
+   row belongs to exactly one project; unlike Release Management's tabs,
+   these are genuinely separate subsets of data, not shared views. */
 const PROJECT_NAMES=['AR Finance Base','Ar Finance Extn','Digital-Service Ops','Supply Chain',
   'POA','Zenith','PG Quote to Order','EPROC','Release Team'];
 let conflictProject=PROJECT_NAMES[0];
 let editingCflId=null, draftConflict=null;
 function setConflictTab(name){conflictProject=name;cflt.page=1;editingCflId=null;draftConflict=null;draw()}
-let cflt={q:'',objType:'all',objName:'',env:'all',severity:'all',
-  status:'all',assignedTo:'all',conflictType:'all',sort:'idDesc',page:1};
+/* The 17 stored columns, exact order — Sl.no (row position) is rendered
+   separately and is not part of this list. */
+const CF_FIELDS=[
+ {h:'Wave',key:'wave',w:110},
+ {h:'Feature#',key:'feature',w:110},
+ {h:'Story#',key:'story',w:110},
+ {h:'Description',key:'description',w:280},
+ {h:'Estimation',key:'estimation',w:100},
+ {h:'Mode of release',key:'modeOfRelease',w:140},
+ {h:'Release Month',key:'releaseMonth',w:130},
+ {h:'Developers',key:'developers',w:150},
+ {h:'Current Status',key:'currentStatus',w:160},
+ {h:'SDD Review',key:'sddReview',w:130},
+ {h:'Development',key:'development',w:130},
+ {h:'Unit Testing',key:'unitTesting',w:130},
+ {h:'Demo',key:'demo',w:120},
+ {h:'Code Review',key:'codeReview',w:130},
+ {h:'UAT',key:'uat',w:110},
+ {h:'KT to Support',key:'ktToSupport',w:130},
+ {h:'Prod',key:'prod',w:120},
+];
+let cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',sort:'default',page:1};
 const CF_PAGE_SIZE=15;
 
 /* ═══ server sync ═══════════════════════ */
@@ -395,8 +413,12 @@ function applyState(s){
     if(!Array.isArray(r.milestones))r.milestones=blankMilestones();
     else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
   });
-  // Backfill Project Name onto conflicts saved before project tabs existed.
-  conflicts.forEach(c=>{if(!PROJECT_NAMES.includes(c.project))c.project=PROJECT_NAMES[0]});
+  // Backfill Project Name and the 17 project-tracker fields onto rows
+  // saved under the old conflict-specific schema.
+  conflicts.forEach(c=>{
+    if(!PROJECT_NAMES.includes(c.project))c.project=PROJECT_NAMES[0];
+    CF_FIELDS.forEach(f=>{if(c[f.key]===undefined)c[f.key]=''});
+  });
 }
 function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl,conflicts}}
 async function persist(){
@@ -562,7 +584,7 @@ const NAV=[
    {k:'mine',l:'My pending actions',ic:'⏳',ct:()=>pendingForMe().length,alert:1},
    {k:'relmgmt',l:'Release Management',ic:'📦',ct:()=>rels.length},
    {k:'cal', l:'Release calendar',ic:'📅'},
-   {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>conflicts.filter(c=>c.status==='Open').length}]},
+   {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>conflicts.length}]},
  {g:'Messages',items:[
    {k:'chg', l:'Change activity',ic:'🔔',ct:unackCount,alert:1},
    {k:'mail',l:'Compose email',ic:'✉️'},
@@ -595,7 +617,7 @@ function drawNav(){
     <button class="bt s" onclick="go('mypw')">Change password</button>
     <button class="bt s" onclick="doLogout()">Logout</button>`:'';
 }
-function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();if(k==='cft')loadFiles();draw();window.scrollTo(0,0)}
+function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();draw();window.scrollTo(0,0)}
 function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
 
 /* ═══ router ════════════════════════════ */
@@ -873,11 +895,10 @@ function vDash(){
   const releasesInUAT=rels.filter(r=>r.cur==='uat').length;
   const scheduledForProd=rels.filter(r=>r.cur==='prod').length;
   const upcomingCount=rels.filter(r=>r.plan&&r.cur!=='done').length;
-  const openConflicts=conflicts.filter(c=>c.status==='Open').length;
-  const criticalConflicts=conflicts.filter(c=>c.severity==='Critical'&&c.status!=='Closed').length;
+  const trackerRows=conflicts.length;
+  const rowsByProject=countBy(conflicts,c=>c.project||'Unspecified').slice(0,9);
   const byDeveloper=countBy(rels,r=>r.owner?U(r.owner).nm:null).slice(0,8);
   const byComponent=countBy(rels,r=>C(r.comp).nm).slice(0,8);
-  const conflictsByObjType=countBy(conflicts,c=>c.objectType||'Unspecified').slice(0,8);
   const att=[];
   apps_.filter(a=>a.status==='open'&&a.esc).forEach(a=>att.push([`Approval overdue — ${R(a.rel).ref}`,`${SL(a.stage)} has passed the escalation threshold`,a.rel]));
   rels.filter(r=>stageState(r,r.cur)==='rejected').forEach(r=>att.push([`Rejected at ${SL(r.cur)} — ${r.ref}`,r.nm,r.id]));
@@ -901,8 +922,8 @@ function vDash(){
     <div class="stat"><div class="l">Upcoming</div><div class="n">${upcomingCount}</div><div class="h">have a planned date</div></div>
     <div class="stat"><div class="l">In business approval</div><div class="n">${releasesInUAT}</div><div class="h">at that gate now</div></div>
     <div class="stat"><div class="l">Scheduled for production</div><div class="n">${scheduledForProd}</div><div class="h">at that gate now</div></div>
-    <div class="stat"><div class="l">Open conflicts</div><div class="n ${openConflicts?'w':'g'}">${openConflicts}</div><div class="h">${hasPerm('view_conflicts')?'in Conflict Tracker':'—'}</div></div>
-    <div class="stat"><div class="l">Critical conflicts</div><div class="n ${criticalConflicts?'s':'g'}">${criticalConflicts}</div><div class="h">${criticalConflicts?'unresolved':'none open'}</div></div>
+    <div class="stat"><div class="l">Tracker rows</div><div class="n">${trackerRows}</div><div class="h">${hasPerm('view_conflicts')?'in Conflict Tracker':'—'}</div></div>
+    <div class="stat"><div class="l">Projects tracked</div><div class="n">${PROJECT_NAMES.length}</div><div class="h">project tabs</div></div>
   </div></div>
 
   <div class="sec grid">
@@ -915,8 +936,8 @@ function vDash(){
       </div></div>
     </div>
   </div>
-  ${hasPerm('view_conflicts')?`<div class="sec c"><div class="h"><h3>Conflicts by object type</h3></div><div class="b">
-    ${miniBarList(conflictsByObjType,'No conflicts recorded yet.')}
+  ${hasPerm('view_conflicts')?`<div class="sec c"><div class="h"><h3>Conflict Tracker rows by project</h3></div><div class="b">
+    ${miniBarList(rowsByProject,'No rows recorded yet.')}
   </div></div>`:''}
 
   ${att.length?`<div class="sec"><div class="c"><div class="h"><h3>Immediate attention</h3>
@@ -1264,59 +1285,40 @@ function vRel(){
 
 /* ═══ conflict tracker ══════════════════ */
 function setCF(k,v){cflt[k]=v;cflt.page=1;draw()}
-function clearCF(){cflt={q:'',objType:'all',objName:'',env:'all',severity:'all',
-  status:'all',assignedTo:'all',conflictType:'all',sort:'idDesc',page:1};draw()}
+function clearCF(){cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',sort:'default',page:1};draw()}
 /* Project tabs ARE separate datasets here (unlike Release Management's
-   tabs) — a conflict belongs to exactly one project. */
+   tabs) — a row belongs to exactly one project. Current Status/Mode of
+   release/Release Month are freeform text in the source Excel (values
+   like "3/6 - Backlog", "Mar'26"), so their filter dropdowns are built
+   from whatever values actually occur in the current project's rows,
+   not a fixed enum. */
 function filteredConflicts(){
   return conflicts.filter(c=>{
     if(c.project!==conflictProject)return false;
-    if(cflt.objType!=='all'&&c.objectType!==cflt.objType)return false;
-    if(cflt.objName&&!(c.objectName||'').toLowerCase().includes(cflt.objName.toLowerCase()))return false;
-    if(cflt.env!=='all'&&c.environment!==cflt.env)return false;
-    if(cflt.severity!=='all'&&c.severity!==cflt.severity)return false;
-    if(cflt.status!=='all'&&c.status!==cflt.status)return false;
-    if(cflt.assignedTo!=='all'&&c.assignedTo!==cflt.assignedTo)return false;
-    if(cflt.conflictType!=='all'&&c.conflictType!==cflt.conflictType)return false;
+    if(cflt.status!=='all'&&c.currentStatus!==cflt.status)return false;
+    if(cflt.modeOfRelease!=='all'&&c.modeOfRelease!==cflt.modeOfRelease)return false;
+    if(cflt.releaseMonth!=='all'&&c.releaseMonth!==cflt.releaseMonth)return false;
     if(cflt.q){
       const q=cflt.q.toLowerCase();
-      const hay=[c.id,c.summary,c.description,c.objectName].filter(Boolean).join(' ').toLowerCase();
+      const hay=[c.wave,c.feature,c.story,c.description,c.developers].filter(Boolean).join(' ').toLowerCase();
       if(!hay.includes(q))return false;
     }
     return true;
   }).sort((a,b)=>{
-    if(cflt.sort==='idAsc')return (a.identifiedDate||'').localeCompare(b.identifiedDate||'');
-    if(cflt.sort==='sevDesc'){const ord={Critical:3,High:2,Medium:1,Low:0};return (ord[b.severity]||0)-(ord[a.severity]||0)}
-    if(cflt.sort==='status')return (a.status||'').localeCompare(b.status||'');
-    return (b.identifiedDate||'').localeCompare(a.identifiedDate||'');
+    if(cflt.sort==='wave')return (a.wave||'').localeCompare(b.wave||'');
+    if(cflt.sort==='story')return (a.story||'').localeCompare(b.story||'');
+    if(cflt.sort==='developers')return (a.developers||'').localeCompare(b.developers||'');
+    if(cflt.sort==='status')return (a.currentStatus||'').localeCompare(b.currentStatus||'');
+    if(cflt.sort==='releaseMonth')return (a.releaseMonth||'').localeCompare(b.releaseMonth||'');
+    return 0;
   });
 }
-/* 11 columns, exact order — matches the fields you specified since
-   Project Tracker_2026.xlsx has no conflict-specific columns of its own.
-   Shared by the grid, CSV export, and (via renderCflEditRow) the inline
-   editor, so table columns and edit fields can't drift apart. */
+/* 17 stored columns (CF_FIELDS) + a computed Sl.no — exact order, matching
+   Project Tracker_2026.xlsx. Shared by the grid, CSV export, and (via
+   renderCflEditRow) the inline editor, so table and edit columns can't
+   drift apart. */
 function cfColumns(){
-  return [
-   {h:'Conflict Type',w:160,cell:c=>E(c.conflictType||'—')},
-   {h:'Conflict Description',w:260,cell:c=>c.description?E(c.description):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Object Type',w:120,cell:c=>`<span class="tag">${E(c.objectType||'—')}</span>`},
-   {h:'Object Name',w:160,cell:c=>c.objectName?E(c.objectName):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Environment',w:110,cell:c=>E(c.environment||'—')},
-   {h:'Severity',w:120,cell:c=>`<span class="stt ${CF_SEV_CLS[c.severity]||'s-none'}"><i></i>${E(c.severity||'—')}</span>`},
-   {h:'Status',w:140,cell:c=>`<span class="stt ${CF_STATUS_CLS[c.status]||'s-none'}"><i></i>${E(c.status||'—')}</span>`},
-   {h:'Assigned To',w:140,cell:c=>c.assignedTo?E(U(c.assignedTo).nm):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Resolution',w:200,cell:c=>c.resolution?E(c.resolution):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Comments',w:180,cell:c=>c.comments?E(c.comments):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Attachments',w:220,cell:c=>cfAttCell(c)},
-  ];
-}
-function cfAttCell(c){
-  const linked=files.filter(f=>f.conflict_id===c.id);
-  const canDownload=hasPerm('download_files');
-  return `${linked.map(f=>`<div style="white-space:nowrap">${canDownload
-      ?`<button class="lk" style="font-size:12px" onclick="event.stopPropagation();downloadFile(${f.id})">📎 ${E(f.original_name)}</button>`
-      :`<span style="font-size:12px">📎 ${E(f.original_name)}</span>`}</div>`).join('')}
-    ${hasPerm('upload_files')?`<button class="bt s" style="margin-top:4px" onclick="event.stopPropagation();mUploadFile({conflictId:'${c.id}'})">Upload</button>`:''}`;
+  return CF_FIELDS.map(f=>({h:f.h,w:f.w,cell:c=>c[f.key]?E(c[f.key]):'<span style="color:var(--mut2)">—</span>'}));
 }
 function vConflicts(){
   const canEditHere=hasPerm('edit_conflict');
@@ -1327,61 +1329,52 @@ function vConflicts(){
   const all=filteredConflicts();
   const totalPages=Math.max(1,Math.ceil(all.length/CF_PAGE_SIZE));
   if(cflt.page>totalPages)cflt.page=totalPages;
-  const pageRows=all.slice((cflt.page-1)*CF_PAGE_SIZE,cflt.page*CF_PAGE_SIZE);
-  const projectConflicts=conflicts.filter(c=>c.project===conflictProject);
-  const openCount=projectConflicts.filter(c=>c.status==='Open').length;
-  const criticalCount=projectConflicts.filter(c=>c.severity==='Critical'&&c.status!=='Closed').length;
+  const pageStart=(cflt.page-1)*CF_PAGE_SIZE;
+  const pageRows=all.slice(pageStart,pageStart+CF_PAGE_SIZE);
+  const projectRows=conflicts.filter(c=>c.project===conflictProject);
+  const uniq=key=>[...new Set(projectRows.map(c=>c[key]).filter(Boolean))].sort();
+  const statusValues=uniq('currentStatus'),modeValues=uniq('modeOfRelease'),monthValues=uniq('releaseMonth');
   const cols=cfColumns();
-  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(showActionCol?170:0);
+  const SLNO_W=70;
+  const tableWidth=SLNO_W+cols.reduce((s,c)=>s+c.w,0)+(showActionCol?170:0);
   const projTabs=`<div class="seg" style="margin-top:16px;overflow-x:auto;max-width:100%">${PROJECT_NAMES.map(p=>
     `<button style="white-space:nowrap;flex:0 0 auto" class="${p===conflictProject?'on':''}" onclick="setConflictTab('${E(p)}')">${E(p)}</button>`).join('')}</div>`;
 
-  return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Conflict</button>`:'')+
+  return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
     `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+
     projTabs+`
-  <div class="sec"><div class="stats">
-    <div class="stat"><div class="l">Total conflicts</div><div class="n">${projectConflicts.length}</div><div class="h">in ${E(conflictProject)}</div></div>
-    <div class="stat"><div class="l">Open</div><div class="n ${openCount?'w':''}">${openCount}</div><div class="h">need attention</div></div>
-    <div class="stat"><div class="l">Critical</div><div class="n ${criticalCount?'s':'g'}">${criticalCount}</div><div class="h">${criticalCount?'unresolved':'none open'}</div></div>
-    <div class="stat"><div class="l">Showing</div><div class="n">${all.length}</div><div class="h">match current filters</div></div>
-  </div></div>
-
   <div class="sec c"><div class="b">
     <div class="fg">
-      <div><label>Search</label><input value="${E(cflt.q)}" placeholder="ID, summary, object"
+      <div><label>Search</label><input value="${E(cflt.q)}" placeholder="Wave, Feature#, Story#, description, developers"
         oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(draw,220)"></div>
-      <div><label>Object Type</label><select onchange="setCF('objType',this.value)"><option value="all">All object types</option>
-        ${OBJECT_TYPES.map(t=>`<option ${cflt.objType===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Environment</label><select onchange="setCF('env',this.value)"><option value="all">All environments</option>
-        ${ENVIRONMENTS.map(t=>`<option ${cflt.env===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Severity</label><select onchange="setCF('severity',this.value)"><option value="all">Any severity</option>
-        ${SEVERITIES.map(t=>`<option ${cflt.severity===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Status</label><select onchange="setCF('status',this.value)"><option value="all">Any status</option>
-        ${CF_STATUSES.map(t=>`<option ${cflt.status===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Conflict Type</label><select onchange="setCF('conflictType',this.value)"><option value="all">Any type</option>
-        ${CONFLICT_TYPES.map(t=>`<option ${cflt.conflictType===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Assigned To</label><select onchange="setCF('assignedTo',this.value)"><option value="all">Anyone</option>
-        ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${cflt.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></div>
-      <div><label>Object Name</label><input value="${E(cflt.objName)}" placeholder="e.g. CUSTOMER_FORM.fmb"
-        oninput="cflt.objName=this.value;cflt.page=1;clearTimeout(window._cft2);window._cft2=setTimeout(draw,220)"></div>
+      <div><label>Current Status</label><select onchange="setCF('status',this.value)"><option value="all">All statuses</option>
+        ${statusValues.map(t=>`<option ${cflt.status===t?'selected':''}>${E(t)}</option>`).join('')}</select></div>
+      <div><label>Mode of release</label><select onchange="setCF('modeOfRelease',this.value)"><option value="all">All modes</option>
+        ${modeValues.map(t=>`<option ${cflt.modeOfRelease===t?'selected':''}>${E(t)}</option>`).join('')}</select></div>
+      <div><label>Release Month</label><select onchange="setCF('releaseMonth',this.value)"><option value="all">All months</option>
+        ${monthValues.map(t=>`<option ${cflt.releaseMonth===t?'selected':''}>${E(t)}</option>`).join('')}</select></div>
       <div><label>Sort by</label><select onchange="setCF('sort',this.value)">
-        <option value="idDesc" ${cflt.sort==='idDesc'?'selected':''}>Identified date (newest)</option>
-        <option value="idAsc" ${cflt.sort==='idAsc'?'selected':''}>Identified date (oldest)</option>
-        <option value="sevDesc" ${cflt.sort==='sevDesc'?'selected':''}>Severity (highest first)</option>
-        <option value="status" ${cflt.sort==='status'?'selected':''}>Status</option></select></div>
+        <option value="default" ${cflt.sort==='default'?'selected':''}>Row order</option>
+        <option value="wave" ${cflt.sort==='wave'?'selected':''}>Wave</option>
+        <option value="story" ${cflt.sort==='story'?'selected':''}>Story#</option>
+        <option value="developers" ${cflt.sort==='developers'?'selected':''}>Developers</option>
+        <option value="status" ${cflt.sort==='status'?'selected':''}>Current Status</option>
+        <option value="releaseMonth" ${cflt.sort==='releaseMonth'?'selected':''}>Release Month</option></select></div>
     </div>
     <div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>
   </div></div>
 
   <div class="c"><div class="b flush">${(pageRows.length||showDraft)?`
     <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
-    <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
+    <thead><tr><th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${SLNO_W}px">Sl.no</th>
+      ${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
       ${showActionCol?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
     <tbody>
       ${showDraft?renderCflEditRow(draftConflict,true):''}
-      ${pageRows.map(c=>{
+      ${pageRows.map((c,i)=>{
         if(editingCflId===c.id)return renderCflEditRow(c,false);
         return `<tr>
+      <td class="mono" style="font-size:12px;color:var(--mut2)">${pageStart+i+1}</td>
       ${cols.map(col=>`<td style="white-space:nowrap">${col.cell(c)}</td>`).join('')}
       ${showActionCol?`<td style="text-align:right;white-space:nowrap">
         ${canEditHere?`<button class="bt s" onclick="editCflRow('${c.id}')">Edit</button>`:''}
@@ -1391,14 +1384,14 @@ function vConflicts(){
       }).join('')}
     </tbody></table></div>
     <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?((cflt.page-1)*CF_PAGE_SIZE+1):0}–${(cflt.page-1)*CF_PAGE_SIZE+pageRows.length} of ${all.length}</span>
+      <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?(pageStart+1):0}–${pageStart+pageRows.length} of ${all.length}</span>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="bt s" ${cflt.page<=1?'disabled':''} onclick="cflt.page--;draw()">← Prev</button>
         <span style="font-size:12.5px;color:var(--mut)">Page ${cflt.page} of ${totalPages}</span>
         <button class="bt s" ${cflt.page>=totalPages?'disabled':''} onclick="cflt.page++;draw()">Next →</button>
       </div>
     </div>`
-    :'<div class="ept"><h4>No conflicts match</h4><p>Adjust the filters above, or record a new conflict to get started.</p></div>'}
+    :'<div class="ept"><h4>No rows match</h4><p>Adjust the filters above, or add a row to get started.</p></div>'}
   </div></div>`;
 }
 /* ═══ Excel-style inline conflict editing ═
@@ -1410,148 +1403,65 @@ function vConflicts(){
    small file-picker modal, not part of the row's Save). */
 function mNewConflictRow(){
   if(draftConflict)return;
-  draftConflict={conflictType:CONFLICT_TYPES[0],description:'',objectType:OBJECT_TYPES[0],objectName:'',
-    environment:ENVIRONMENTS[0],severity:SEVERITIES[0],status:CF_STATUSES[0],assignedTo:'',resolution:'',comments:''};
+  draftConflict={};
+  CF_FIELDS.forEach(f=>{draftConflict[f.key]=''});
   editingCflId='draft';
   draw();
 }
 function editCflRow(id){draftConflict=null;editingCflId=id;draw()}
 function cancelCflEdit(){editingCflId=null;draftConflict=null;draw()}
 function renderCflEditRow(c,isDraft){
-  const sel=(id,opts,cur)=>`<td onclick="event.stopPropagation()"><select id="${id}" style="width:100%">
-    ${opts.map(t=>`<option ${cur===t?'selected':''}>${t}</option>`).join('')}</select></td>`;
-  const t=(id,val)=>`<td onclick="event.stopPropagation()"><input id="${id}" value="${E(val||'')}" style="width:100%;min-width:110px"></td>`;
-  let html=`<tr class="editing">`;
-  html+=sel('cf-e-ctype',CONFLICT_TYPES,c.conflictType);
-  html+=t('cf-e-desc',c.description);
-  html+=sel('cf-e-otype',OBJECT_TYPES,c.objectType);
-  html+=t('cf-e-oname',c.objectName);
-  html+=sel('cf-e-env',ENVIRONMENTS,c.environment);
-  html+=sel('cf-e-sev',SEVERITIES,c.severity);
-  html+=sel('cf-e-status',CF_STATUSES,c.status);
-  html+=`<td onclick="event.stopPropagation()"><select id="cf-e-assigned" style="width:100%"><option value="">— none —</option>
-    ${users.filter(u=>u.active).map(u=>`<option value="${u.id}" ${c.assignedTo===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></td>`;
-  html+=t('cf-e-res',c.resolution);
-  html+=t('cf-e-comments',c.comments);
-  html+=`<td onclick="event.stopPropagation()">${isDraft?'<span style="color:var(--mut2);font-size:12px">Save first to attach files</span>':cfAttCell(c)}</td>`;
+  let html=`<tr class="editing"><td class="mono" style="font-size:12px;color:var(--mut2)">${isDraft?'—':''}</td>`;
+  CF_FIELDS.forEach(f=>{
+    html+=`<td onclick="event.stopPropagation()"><input id="cf-e-${f.key}" value="${E(c[f.key]||'')}" style="width:100%;min-width:100px"></td>`;
+  });
   html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
     <button class="bt p s" onclick="saveCflRow('${isDraft?'draft':c.id}')">Save</button>
     <button class="bt s" onclick="cancelCflEdit()">Cancel</button></td>`;
   return html+'</tr>';
 }
 function saveCflRow(id){
-  const description=document.getElementById('cf-e-desc').value.trim();
-  if(!description){toast('Conflict Description is required');return}
-  const vals={
-    conflictType:document.getElementById('cf-e-ctype').value,
-    description,summary:description,
-    objectType:document.getElementById('cf-e-otype').value,
-    objectName:document.getElementById('cf-e-oname').value.trim(),
-    environment:document.getElementById('cf-e-env').value,
-    severity:document.getElementById('cf-e-sev').value,
-    status:document.getElementById('cf-e-status').value,
-    assignedTo:document.getElementById('cf-e-assigned').value||null,
-    resolution:document.getElementById('cf-e-res').value.trim(),
-    comments:document.getElementById('cf-e-comments').value.trim(),
-  };
+  const description=document.getElementById('cf-e-description').value.trim();
+  if(!description){toast('Description is required');return}
+  const vals={};
+  CF_FIELDS.forEach(f=>{vals[f.key]=document.getElementById(`cf-e-${f.key}`).value.trim()});
   if(id==='draft'){
-    const c={id:nid('CFL-'),project:conflictProject,rel:null,
-      identifiedDate:now().slice(0,10),identifiedBy:me,resolutionDate:null,atts:[],...vals};
-    conflicts.unshift(c);
-    logAudit(`Created conflict — ${description.slice(0,60)}`,null,'—',c.status);
+    const c={id:nid('CFL-'),project:conflictProject,...vals};
+    conflicts.push(c);
+    logAudit(`Added project tracker row — ${description.slice(0,60)}`,null,'—','—');
     editingCflId=null;draftConflict=null;
-    draw();toast('Conflict recorded');persist();
+    draw();toast('Row saved');persist();
   }else{
     const c=CF(id);if(!c)return;
     Object.assign(c,vals);
-    logAudit(`Updated conflict — ${c.id}`,null,'—',c.status);
+    logAudit(`Updated project tracker row — ${c.id}`,null,'—','—');
     editingCflId=null;
-    draw();toast('Conflict updated');persist();
+    draw();toast('Row updated');persist();
   }
 }
 function mDelConflict(id){
   const c=CF(id);if(!c)return;
-  show(`<div class="h"><h3>Delete ${c.id}?</h3><p>${E(c.summary)} — this cannot be undone.</p></div>
+  show(`<div class="h"><h3>Delete row?</h3><p>${E(c.description||c.id)} — this cannot be undone.</p></div>
   <div class="b"></div>
   <div class="f"><button class="bt" onclick="shut()">Cancel</button>
     <button class="bt d" onclick="doDelConflict('${id}')">Delete</button></div>`);
 }
 function doDelConflict(id){
   conflicts=conflicts.filter(c=>c.id!==id);
-  logAudit(`Deleted conflict ${id}`,null,'—','—');
-  shut();draw();toast('Conflict deleted');persist();
+  logAudit(`Deleted project tracker row ${id}`,null,'—','—');
+  shut();draw();toast('Row deleted');persist();
 }
 function exportConflictsCsv(){
   const cols=cfColumns();
-  const rows=[cols.map(c=>c.h)];
-  filteredConflicts().forEach(c=>rows.push(cols.map(col=>{
+  const rows=[['Sl.no',...cols.map(c=>c.h)]];
+  filteredConflicts().forEach((c,i)=>rows.push([i+1,...cols.map(col=>{
     const div=document.createElement('div');div.innerHTML=col.cell(c);return div.textContent.trim();
-  })));
+  })]));
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
-    a.href=u;a.download=`${conflictProject}-conflicts.csv`;a.click();URL.revokeObjectURL(u);toast('Conflicts exported')}
+    a.href=u;a.download=`${conflictProject}-tracker.csv`;a.click();URL.revokeObjectURL(u);toast('Exported')}
   catch(e){navigator.clipboard?.writeText(csv);toast('Copied to clipboard')}
 }
-
-/* ═══ files (conflict attachments only) ══ */
-async function loadFiles(){
-  try{const r=await fetch('/api/files',{credentials:'same-origin'});if(r.ok)files=await r.json()}catch(e){}
-  if(view==='cft')draw();
-}
-function fileSize(n){
-  if(n==null)return '—';
-  if(n<1024)return n+' B';
-  if(n<1024*1024)return (n/1024).toFixed(1)+' KB';
-  return (n/1024/1024).toFixed(2)+' MB';
-}
-/* Uploads only happen from within a conflict's edit screen now — there is
-   no standalone file-browsing page, so every upload is tied to a
-   conflict_id and the release-linking/versioning fields that page used
-   to offer are gone. */
-function mUploadFile(opts){
-  const conflictId=(opts&&opts.conflictId)||'';
-  const c=conflictId?CF(conflictId):null;
-  if(!c)return;
-  show(`<div class="h"><h3>Upload attachment</h3><p>Attaching to conflict ${c.id}. Allowed: .fmb, .rdf, .rep, .sql, .pls, .plb, .pkb, .pks, .prc, .fnc, .trg, .typ, .xml, .txt, .ctl, .java, .sh — max 20 MB.</p></div>
-  <div class="b">
-    <label>File</label><input type="file" id="uf-file">
-    <div class="er" id="e-uf-file">Choose a file.</div>
-    <div class="fg" style="margin-top:14px">
-      <div><label>Object Type</label><select id="uf-otype" onchange="document.getElementById('uf-formname-wrap').style.display=this.value==='FMB'?'block':'none'">
-        ${OBJECT_TYPES.map(t=>`<option ${c.objectType===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>Object Name</label><input id="uf-oname" placeholder="e.g. CUSTOMER_FORM.fmb" value="${E(c.objectName||'')}"></div>
-      <div><label>Environment</label><select id="uf-env">${ENVIRONMENTS.map(t=>`<option ${c.environment===t?'selected':''}>${t}</option>`).join('')}</select></div>
-    </div>
-    <div id="uf-formname-wrap" style="display:none;margin-top:14px"><label>Form Name (Oracle Forms internal name)</label><input id="uf-formname"></div>
-    <div style="margin-top:14px"><label>Description</label><textarea id="uf-desc" rows="2"></textarea></div>
-  </div>
-  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
-    <button class="bt p" id="uf-submit" onclick="doUploadFile('${conflictId}')">Upload</button></div>`);
-}
-async function doUploadFile(conflictId){
-  const fileInput=document.getElementById('uf-file');
-  if(!fileInput.files.length){document.getElementById('e-uf-file').classList.add('on');return}
-  document.getElementById('e-uf-file').classList.remove('on');
-  const fd=new FormData();
-  fd.append('file',fileInput.files[0]);
-  fd.append('object_type',document.getElementById('uf-otype').value);
-  fd.append('object_name',document.getElementById('uf-oname').value.trim());
-  fd.append('environment',document.getElementById('uf-env').value);
-  fd.append('description',document.getElementById('uf-desc').value.trim());
-  fd.append('conflict_id',conflictId);
-  const fnEl=document.getElementById('uf-formname');
-  fd.append('form_name',fnEl?fnEl.value.trim():'');
-  const btn=document.getElementById('uf-submit');btn.disabled=true;btn.textContent='Uploading…';
-  try{
-    const res=await fetch('/api/files/upload',{method:'POST',credentials:'same-origin',body:fd});
-    const j=await res.json().catch(()=>({}));
-    btn.disabled=false;btn.textContent='Upload';
-    if(!res.ok){toast(j.detail||'Upload failed');return}
-    shut();toast('File uploaded');
-    loadFiles();
-  }catch(e){btn.disabled=false;btn.textContent='Upload';toast('Could not reach the server')}
-}
-function downloadFile(id){window.open(`/api/files/${id}/download`,'_blank')}
 
 /* ═══ calendar ══════════════════════════ */
 function vCal(){
