@@ -9,13 +9,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
-  --ink:#0F1318; --ink2:#333D4A; --mut:#616D7C; --mut2:#8E99A6;
-  --line:#E7EAEE; --line2:#D6DCE3;
-  --paper:#F4F5F7; --card:#FFFFFF; --sunk:#FAFBFC;
-  --go:#0D6E5C; --go-bg:#E7F2EF; --go-ln:#BFDDD5;
-  --wait:#96600A; --wait-bg:#FBF2E1; --wait-ln:#EBD7AE;
-  --stop:#B0271C; --stop-bg:#FCEBE9; --stop-ln:#EFC9C5;
-  --btn:#141A21;
+  /* Enterprise blue + teal system. Neutrals first (text/background/border),
+     then the two brand accents (navy = primary actions & active nav, teal =
+     selected states & key indicators), then the four semantic status colors.
+     Everything in this file reads color through these variables — change
+     the theme here and it applies everywhere consistently. */
+  --ink:#1A2027; --ink2:#3A4453; --mut:#5B6472; --mut2:#8993A3;
+  --line:#E3E8ED; --line2:#CDD5DE;
+  --paper:#F5F7FA; --card:#FFFFFF; --sunk:#F6F8FA;
+
+  --navy:#1B3A63; --navy-dk:#12283F; --navy-bg:#E8EEF6; --navy-ln:#C6D4E4;
+  --teal:#0E7C86; --teal-dk:#0B646C; --teal-bg:#E3F4F4; --teal-ln:#BEE1E0;
+
+  --go:#1E8E5A; --go-bg:#E7F6EE; --go-ln:#C3E7D2;
+  --wait:#B5740A; --wait-bg:#FCF1DE; --wait-ln:#F0DBAD;
+  --stop:#C23B2E; --stop-bg:#FBEAE8; --stop-ln:#F0C9C3;
+  --info:#2E6DB4; --info-bg:#E8F1FB; --info-ln:#C3D9F0;
+
+  --btn:var(--navy);
   --sh:0 1px 2px rgba(15,19,24,.04), 0 2px 6px rgba(15,19,24,.05);
   --sh2:0 4px 16px rgba(15,19,24,.09);
   --d:"Inter Tight",system-ui,sans-serif;
@@ -25,7 +36,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--paper);color:var(--ink);font-family:var(--b);font-size:14px;line-height:1.6;
   -webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
-:focus-visible{outline:2px solid var(--go);outline-offset:2px;border-radius:4px}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:4px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .mono,.mn{font-family:var(--m);font-variant-numeric:tabular-nums}
@@ -36,15 +47,15 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
   overflow-y:auto;padding:20px 0 30px}
 .mark{padding:0 20px 24px;display:flex;align-items:center;gap:8px}
 .mark b{font-family:var(--d);font-size:20px;font-weight:700;letter-spacing:-.035em}
-.mark i{width:6px;height:6px;border-radius:50%;background:var(--go);display:block;margin-top:2px}
+.mark i{width:6px;height:6px;border-radius:50%;background:var(--teal);display:block;margin-top:2px}
 .ngrp{padding:16px 20px 7px;font-size:10.5px;font-weight:600;letter-spacing:.1em;
   text-transform:uppercase;color:var(--mut2)}
 .ni{display:flex;align-items:center;gap:9px;margin:1px 10px;padding:8px 11px;border-radius:8px;
   color:var(--ink2);cursor:pointer;font-size:13.5px;font-weight:450;transition:background .13s}
 .ni:hover{background:var(--sunk)}
-.ni.on{background:var(--go-bg);color:var(--go);font-weight:600}
+.ni.on{background:var(--navy-bg);color:var(--navy);font-weight:600}
 .ni .ct{margin-left:auto;font-family:var(--m);font-size:11px;color:var(--mut2)}
-.ni.on .ct{color:var(--go)}
+.ni.on .ct{color:var(--navy)}
 .ni .dt{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--stop)}
 
 .main{min-width:0;display:flex;flex-direction:column}
@@ -55,7 +66,7 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:2px;box-shadow:var(--sh)}
 .seg button{border:0;background:transparent;font-family:var(--b);font-size:12.5px;font-weight:500;
   padding:5px 12px;border-radius:7px;color:var(--mut);cursor:pointer;transition:all .13s}
-.seg button.on{background:var(--btn);color:#fff}
+.seg button.on{background:var(--teal);color:#fff}
 .body{padding:34px;flex:1;max-width:1320px;width:100%}
 @media(max-width:920px){
   .shell{grid-template-columns:1fr}
@@ -98,9 +109,9 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .bt{font-family:var(--b);font-size:13px;font-weight:500;padding:8px 15px;border-radius:8px;
   border:1px solid var(--line2);background:var(--card);color:var(--ink);cursor:pointer;
   transition:all .13s;white-space:nowrap;box-shadow:0 1px 1px rgba(15,19,24,.03)}
-.bt:hover{background:var(--sunk);border-color:#C3CBD4}
+.bt:hover{background:var(--sunk);border-color:#B7C0CB}
 .bt.p{background:var(--btn);border-color:var(--btn);color:#fff}
-.bt.p:hover{background:#000}
+.bt.p:hover{background:var(--navy-dk);border-color:var(--navy-dk)}
 .bt.d{color:var(--stop);border-color:var(--stop-ln)}
 .bt.d:hover{background:var(--stop-bg)}
 .bt.s{padding:5px 11px;font-size:12.5px;border-radius:7px}
@@ -162,25 +173,27 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
   color:var(--mut2);padding:11px 20px;border-bottom:1px solid var(--line)}
-td{padding:14px 20px;border-bottom:1px solid #F0F2F4;vertical-align:middle;font-size:13.5px}
+td{padding:14px 20px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13.5px}
 tr:last-child td{border-bottom:0}
 tbody tr.k{cursor:pointer;transition:background .11s}
 tbody tr.k:hover{background:var(--sunk)}
-tbody tr.editing{cursor:default;background:var(--wait-bg)}
+tbody tr.editing{cursor:default;background:var(--teal-bg)}
 tbody tr.editing td{padding:8px 10px}
 tbody tr.editing input,tbody tr.editing select{width:100%;font-size:12.5px;padding:6px 8px;
   border:1px solid var(--line2);border-radius:6px;background:var(--card);font-family:var(--b)}
+tbody tr.editing input:focus,tbody tr.editing select:focus{outline:none;border-color:var(--teal);
+  box-shadow:0 0 0 2px var(--teal-bg)}
 .tw{overflow-x:auto}
 .tt{font-weight:600;font-size:13.5px;letter-spacing:-.008em}
 .rf{font-family:var(--m);font-size:11px;color:var(--mut2);letter-spacing:.03em;margin-top:1px}
 
 /* ── list rows ─────────────────────────── */
-.li{display:flex;gap:14px;padding:14px 20px;border-bottom:1px solid #F0F2F4;align-items:center}
+.li{display:flex;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line);align-items:center}
 .li:last-child{border-bottom:0}
 .li .gr{flex:1;min-width:0}
 .li .t{font-size:13.5px;font-weight:600;letter-spacing:-.008em}
 .li .d{font-size:12.5px;color:var(--mut);margin-top:2px}
-.li.hot{background:#FDF6F5}
+.li.hot{background:var(--stop-bg)}
 .li.hot .t{color:var(--stop)}
 
 /* ── forms ─────────────────────────────── */
@@ -189,7 +202,7 @@ label{display:block;font-size:11px;font-weight:600;letter-spacing:.07em;text-tra
 input,select,textarea{width:100%;font-family:var(--b);font-size:13.5px;padding:9px 12px;
   border:1px solid var(--line2);border-radius:8px;background:var(--card);color:var(--ink)}
 textarea{font-family:var(--b);line-height:1.65;resize:vertical}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--go);box-shadow:0 0 0 3px var(--go-bg)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-bg)}
 input::placeholder,textarea::placeholder{color:var(--mut2)}
 .fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
 .er{color:var(--stop);font-size:12.5px;margin-top:6px;display:none;font-weight:500}
@@ -221,7 +234,7 @@ input::placeholder,textarea::placeholder{color:var(--mut2)}
   background:var(--btn);color:#fff;font-size:13px;font-weight:500;padding:12px 20px;border-radius:10px;
   z-index:80;opacity:0;transition:all .24s cubic-bezier(.2,.8,.2,1);pointer-events:none;box-shadow:var(--sh2)}
 .toast.on{transform:translateX(-50%) translateY(0);opacity:1}
-.mt{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--go);border-radius:0 10px 10px 0;
+.mt{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--info);border-radius:0 10px 10px 0;
   padding:13px 17px;font-size:13px;color:var(--ink2)}
 .mt.w{border-left-color:var(--wait)}
 .ept{padding:52px 24px;text-align:center}
@@ -230,7 +243,7 @@ input::placeholder,textarea::placeholder{color:var(--mut2)}
 .kv{display:grid;grid-template-columns:118px 1fr;gap:11px 16px;font-size:13.5px;align-items:baseline}
 .kv .k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--mut2)}
 .tl{font-size:13px}
-.tl .e{display:grid;grid-template-columns:118px 1fr;gap:14px;padding:9px 0;border-bottom:1px solid #F2F4F6}
+.tl .e{display:grid;grid-template-columns:118px 1fr;gap:14px;padding:9px 0;border-bottom:1px solid var(--line)}
 .tl .e:last-child{border-bottom:0}
 .tl .w{font-family:var(--m);font-size:11px;color:var(--mut2);padding-top:2px;letter-spacing:.02em}
 .tl b{font-weight:600}
@@ -241,9 +254,9 @@ input::placeholder,textarea::placeholder{color:var(--mut2)}
 .cal .dc{min-height:84px;padding:8px 9px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
 .cal .dc.o{background:var(--sunk)}
 .cal .dn{font-family:var(--m);font-size:11.5px;color:var(--mut2)}
-.cal .ev{font-size:11.5px;background:var(--go-bg);color:var(--go);border-radius:6px;padding:4px 7px;
+.cal .ev{font-size:11.5px;background:var(--teal-bg);color:var(--teal);border-radius:6px;padding:4px 7px;
   margin-top:5px;font-weight:600;cursor:pointer;line-height:1.4}
-.cal .ev:hover{background:var(--go);color:#fff}
+.cal .ev:hover{background:var(--teal);color:#fff}
 </style>
 </head>
 <body>
@@ -632,7 +645,7 @@ function drawNav(){
   });
   document.getElementById('rail').innerHTML=h;
   document.getElementById('roles').innerHTML=authUser?`
-    <span style="font-size:12.5px;color:var(--ink2);font-weight:500;white-space:nowrap">${E(authUser.name)}${authUser.is_admin?' <span style="color:var(--go);font-weight:600">· Admin</span>':''}</span>
+    <span style="font-size:12.5px;color:var(--ink2);font-weight:500;white-space:nowrap">${E(authUser.name)}${authUser.is_admin?' <span style="color:var(--teal);font-weight:600">· Admin</span>':''}</span>
     <span style="width:1px;height:16px;background:var(--line2)"></span>
     <button class="bt s" onclick="go('mypw')">Change password</button>
     <button class="bt s" onclick="doLogout()">Logout</button>`:'';
@@ -870,7 +883,7 @@ async function toggleAccountActive(id,makeActive){
 /* ═══ help card ═════════════════════════ */
 function helpCard(){
   if(localStorage.getItem('relayHelpDismissed'))return'';
-  return`<div class="sec"><div class="c" style="border-left:3px solid var(--go)"><div class="b">
+  return`<div class="sec"><div class="c" style="border-left:3px solid var(--info)"><div class="b">
     <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start">
       <div>
         <div style="font-family:var(--d);font-weight:700;font-size:15px;margin-bottom:6px">What is this page?</div>
@@ -897,7 +910,7 @@ function miniBarList(rows,emptyMsg){
         <span style="color:var(--ink2)">${E(label)}</span><span class="mono" style="color:var(--mut)">${count}</span>
       </div>
       <div style="background:var(--sunk);border-radius:4px;height:6px;overflow:hidden">
-        <div style="background:var(--go);height:100%;width:${Math.max(4,count/max*100)}%"></div>
+        <div style="background:var(--teal);height:100%;width:${Math.max(4,count/max*100)}%"></div>
       </div>
     </div>`).join('');
 }
@@ -1231,7 +1244,7 @@ function vRel(){
       </div></div>`:''}
 
       <div class="c"><div class="h"><h3>Notes</h3></div><div class="b">
-        ${r.cmts.length?r.cmts.map(c=>`<div style="padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid #F0F2F4">
+        ${r.cmts.length?r.cmts.map(c=>`<div style="padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line)">
           <div style="font-size:13px"><b style="font-weight:600">${E(U(c.by).nm)}</b>
             <span class="mono" style="font-size:11px;color:var(--mut2);margin-left:7px">${fdt(c.on)}</span></div>
           <div style="margin-top:4px;color:var(--ink2)">${E(c.tx)}</div></div>`).join('')
