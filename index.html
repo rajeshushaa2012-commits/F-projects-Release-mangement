@@ -42,21 +42,49 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .mono,.mn{font-family:var(--m);font-variant-numeric:tabular-nums}
 
 /* ── shell ─────────────────────────────── */
-.shell{display:grid;grid-template-columns:238px 1fr;min-height:100vh}
+.shell{display:grid;grid-template-columns:252px 1fr;min-height:100vh}
 .rail{background:var(--card);border-right:1px solid var(--line);position:sticky;top:0;height:100vh;
-  overflow-y:auto;padding:20px 0 30px}
-.mark{padding:0 20px 24px;display:flex;align-items:center;gap:8px}
-.mark b{font-family:var(--d);font-size:20px;font-weight:700;letter-spacing:-.035em}
-.mark i{width:6px;height:6px;border-radius:50%;background:var(--teal);display:block;margin-top:2px}
-.ngrp{padding:16px 20px 7px;font-size:10.5px;font-weight:600;letter-spacing:.1em;
+  display:flex;flex-direction:column;padding:18px 0 0}
+.railnav{flex:1;overflow-y:auto;padding-bottom:14px}
+.mark{padding:2px 20px 20px;display:flex;align-items:center;gap:10px}
+.mark .lg{width:28px;height:28px;border-radius:8px;background:linear-gradient(155deg,var(--navy),var(--teal));
+  display:grid;place-items:center;color:#fff;font-family:var(--d);font-weight:700;font-size:14px;flex:none;
+  box-shadow:0 1px 2px rgba(15,19,24,.14)}
+.mark b{font-family:var(--d);font-size:17px;font-weight:700;letter-spacing:-.03em}
+.ngrp{padding:18px 20px 8px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
   text-transform:uppercase;color:var(--mut2)}
-.ni{display:flex;align-items:center;gap:9px;margin:1px 10px;padding:8px 11px;border-radius:8px;
-  color:var(--ink2);cursor:pointer;font-size:13.5px;font-weight:450;transition:background .13s}
+.ngrp:first-child{padding-top:4px}
+.ni{position:relative;display:flex;align-items:center;gap:10px;margin:1px 10px;padding:8px 11px 8px 13px;
+  border-radius:8px;color:var(--ink2);cursor:pointer;font-size:13.5px;font-weight:450;
+  transition:background .13s,color .13s}
 .ni:hover{background:var(--sunk)}
+.ni .ic{display:inline-flex;width:18px;flex:none;justify-content:center;font-size:14.5px;opacity:.72;
+  transition:opacity .13s}
 .ni.on{background:var(--navy-bg);color:var(--navy);font-weight:600}
-.ni .ct{margin-left:auto;font-family:var(--m);font-size:11px;color:var(--mut2)}
-.ni.on .ct{color:var(--navy)}
-.ni .dt{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--stop)}
+.ni.on .ic{opacity:1}
+.ni.on::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:16px;
+  border-radius:0 3px 3px 0;background:var(--navy)}
+.ni .ct{margin-left:auto;font-family:var(--m);font-size:10.5px;font-weight:600;color:var(--mut);
+  background:var(--sunk);border-radius:20px;padding:1px 7px;line-height:1.5}
+.ni.on .ct{color:var(--navy);background:var(--navy-ln)}
+.ni .dt{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--stop);flex:none}
+
+/* ── sidebar footer / account area ─────── */
+.railfoot{border-top:1px solid var(--line);padding:12px 14px;flex:none}
+.acct{display:flex;align-items:center;gap:10px;padding:6px 6px;border-radius:9px;position:relative}
+.acct:hover{background:var(--sunk)}
+.acct .av{width:32px;height:32px;border-radius:50%;background:var(--navy-bg);color:var(--navy);
+  display:grid;place-items:center;font-family:var(--d);font-weight:700;font-size:13px;flex:none}
+.acct .who{min-width:0;flex:1}
+.acct .nm{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct .rl{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct .menu{position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;box-shadow:var(--sh2);padding:6px;display:none;z-index:30}
+.acct .menu.on{display:block}
+.acct .menu button{width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:7px;
+  font-size:13px;font-family:var(--b);color:var(--ink2);cursor:pointer}
+.acct .menu button:hover{background:var(--sunk)}
+.acct .menu button.dgr{color:var(--stop)}
 
 .main{min-width:0;display:flex;flex-direction:column}
 .top{background:rgba(244,245,247,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
@@ -70,9 +98,15 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .body{padding:34px;flex:1;max-width:1320px;width:100%}
 @media(max-width:920px){
   .shell{grid-template-columns:1fr}
-  .rail{height:auto;position:static;display:flex;gap:2px;overflow-x:auto;padding:9px;border-right:0;border-bottom:1px solid var(--line)}
+  .rail{height:auto;position:static;flex-direction:row;align-items:center;gap:2px;overflow-x:auto;
+    padding:9px;border-right:0;border-bottom:1px solid var(--line)}
   .mark,.ngrp{display:none}
+  .railnav{display:flex;overflow:visible;padding:0;flex:none}
   .ni{white-space:nowrap;margin:0}
+  .ni.on::before{display:none}
+  .railfoot{border-top:0;border-left:1px solid var(--line);padding:0 0 0 10px;margin-left:6px;flex:none}
+  .acct .who{display:none}
+  .acct .menu{left:auto;right:0;bottom:auto;top:calc(100% + 6px);min-width:190px}
   .top{padding:0 18px}.body{padding:20px 18px}
 }
 
@@ -121,13 +155,14 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .lk:hover{color:var(--ink);text-decoration:underline}
 
 /* ── status ────────────────────────────── */
-.stt{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;white-space:nowrap}
+.stt{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;white-space:nowrap;
+  padding:3px 10px 3px 8px;border-radius:20px;line-height:1.5}
 .stt i{width:6px;height:6px;border-radius:50%;flex:none}
-.s-none i{background:var(--mut2)} .s-none{color:var(--mut)}
-.s-prog i{background:var(--ink2)} .s-prog{color:var(--ink2)}
-.s-wait i{background:var(--wait)} .s-wait{color:var(--wait)}
-.s-ok   i{background:var(--go)}   .s-ok{color:var(--go)}
-.s-bad  i{background:var(--stop)} .s-bad{color:var(--stop)}
+.s-none{color:var(--mut);background:var(--sunk)}     .s-none i{background:var(--mut2)}
+.s-prog{color:var(--navy);background:var(--navy-bg)} .s-prog i{background:var(--navy)}
+.s-wait{color:var(--wait);background:var(--wait-bg)} .s-wait i{background:var(--wait)}
+.s-ok{color:var(--go);background:var(--go-bg)}       .s-ok i{background:var(--go)}
+.s-bad{color:var(--stop);background:var(--stop-bg)}  .s-bad i{background:var(--stop)}
 .tick{display:inline-flex;align-items:center;gap:5px;background:var(--go-bg);color:var(--go);
   font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
 .tag{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
@@ -171,12 +206,13 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 
 /* ── tables ────────────────────────────── */
 table{width:100%;border-collapse:collapse}
-th{text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--mut2);padding:11px 20px;border-bottom:1px solid var(--line)}
-td{padding:14px 20px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13.5px}
+th{text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--mut2);padding:11px 20px;border-bottom:1px solid var(--line);background:var(--sunk)}
+td{padding:13px 20px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13.5px}
 tr:last-child td{border-bottom:0}
-tbody tr.k{cursor:pointer;transition:background .11s}
-tbody tr.k:hover{background:var(--sunk)}
+tbody tr{transition:background .11s}
+tbody tr:not(.editing):hover{background:var(--sunk)}
+tbody tr.k{cursor:pointer}
 tbody tr.editing{cursor:default;background:var(--teal-bg)}
 tbody tr.editing td{padding:8px 10px}
 tbody tr.editing input,tbody tr.editing select{width:100%;font-size:12.5px;padding:6px 8px;
@@ -266,7 +302,6 @@ input::placeholder,textarea::placeholder{color:var(--mut2)}
   <div class="main">
     <div class="top">
       <span class="crumb" id="crumb">Workspace</span>
-      <div class="sp"><div id="roles" style="display:flex;align-items:center;gap:14px"></div></div>
     </div>
     <div class="body" id="view"></div>
   </div>
@@ -629,8 +664,12 @@ const NAV=[
  {g:'Administration',adminOrPerm:'manage_users',items:[
    {k:'accts',l:'User accounts',ic:'🔑'}]}
 ];
+function initialsOf(name){
+  const parts=(name||'?').trim().split(/\s+/);
+  return(parts.length>=2?(parts[0][0]||'')+(parts[1][0]||''):(parts[0]||'?').slice(0,2)).toUpperCase();
+}
 function drawNav(){
-  let h=`<div class="mark"><b>Relay</b><i></i></div>`;
+  let h=`<div class="mark"><div class="lg">R</div><b>Relay</b></div><div class="railnav">`;
   NAV.forEach(g=>{
     if(g.admin&&!isAdmin())return;
     if(g.adminOrPerm&&!hasPerm(g.adminOrPerm))return;
@@ -639,17 +678,29 @@ function drawNav(){
       if(it.perm&&!hasPerm(it.perm))return;
       if(it.permAny&&!it.permAny.some(hasPerm))return;
       const n=it.ct?it.ct():0;
-      h+=`<div class="ni ${view===it.k?'on':''}" onclick="go('${it.k}')"><span style="margin-right:2px">${it.ic||''}</span><span>${it.l}</span>
+      h+=`<div class="ni ${view===it.k?'on':''}" onclick="go('${it.k}')"><span class="ic">${it.ic||''}</span><span>${it.l}</span>
         ${n?(it.alert?`<span class="dt"></span>`:`<span class="ct">${n}</span>`):''}</div>`;
     });
   });
+  h+='</div>';
+  if(authUser){
+    h+=`<div class="railfoot"><div class="acct" onclick="event.stopPropagation();toggleAcctMenu()">
+      <div class="av">${E(initialsOf(authUser.name))}</div>
+      <div class="who"><div class="nm">${E(authUser.name)}</div><div class="rl">${E(roleForAccount(authUser))}</div></div>
+      <div class="menu" id="acctMenu">
+        <button onclick="event.stopPropagation();shutAcctMenu();go('mypw')">Change password</button>
+        <button class="dgr" onclick="event.stopPropagation();shutAcctMenu();doLogout()">Logout</button>
+      </div>
+    </div></div>`;
+  }
   document.getElementById('rail').innerHTML=h;
-  document.getElementById('roles').innerHTML=authUser?`
-    <span style="font-size:12.5px;color:var(--ink2);font-weight:500;white-space:nowrap">${E(authUser.name)}${authUser.is_admin?' <span style="color:var(--teal);font-weight:600">· Admin</span>':''}</span>
-    <span style="width:1px;height:16px;background:var(--line2)"></span>
-    <button class="bt s" onclick="go('mypw')">Change password</button>
-    <button class="bt s" onclick="doLogout()">Logout</button>`:'';
 }
+function toggleAcctMenu(){document.getElementById('acctMenu')?.classList.toggle('on')}
+function shutAcctMenu(){document.getElementById('acctMenu')?.classList.remove('on')}
+document.addEventListener('click',e=>{
+  const menu=document.getElementById('acctMenu');
+  if(menu&&menu.classList.contains('on')&&!menu.parentElement.contains(e.target))menu.classList.remove('on');
+});
 function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();draw();window.scrollTo(0,0)}
 function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
 
@@ -732,7 +783,7 @@ async function submitChangePassword(){
 }
 
 /* ═══ user accounts (admin) ═════════════════ */
-let accounts=[],permissionsCatalog=[];
+let accounts=[],permissionsCatalog=[],accountsLoaded=false;
 async function loadAccounts(){
   try{
     const[ar,pr]=await Promise.all([
@@ -742,6 +793,7 @@ async function loadAccounts(){
     if(ar.ok)accounts=await ar.json();
     if(pr.ok)permissionsCatalog=await pr.json();
   }catch(e){}
+  accountsLoaded=true;
   if(view==='accts')draw();
 }
 // The 12-permission checkbox UI is gone (per request) — every account is now
@@ -761,10 +813,9 @@ function roleForAccount(a){
   return'Custom';
 }
 function vAccts(){
-  return head('accts',`<button class="bt p" onclick="mNewAccount()">Add user</button>`)+`
-  <div class="c"><div class="b flush"><div class="tw"><table>
-    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-    <tbody>${accounts.length?accounts.map(a=>`<tr>
+  const rows=!accountsLoaded
+    ?`<tr><td colspan="6"><div class="ept"><h4>Loading accounts…</h4><p>Fetching the latest user list.</p></div></td></tr>`
+    :accounts.length?accounts.map(a=>`<tr>
       <td class="tt">${E(a.name)}</td>
       <td class="mono" style="font-size:11.5px">${E(a.username)}</td>
       <td class="mono" style="font-size:11.5px;color:var(--mut)">${E(a.email||'—')}</td>
@@ -775,8 +826,11 @@ function vAccts(){
         <button class="bt s" onclick="mResetAccountPassword(${a.id})">Reset password</button>
         <button class="bt s" onclick="toggleAccountActive(${a.id},${!a.active})">${a.active?'Deactivate':'Activate'}</button>
       </td>
-    </tr>`).join(''):'<tr><td colspan="6" style="padding:24px;color:var(--mut);text-align:center">Loading…</td></tr>'}
-    </tbody></table></div></div></div>`;
+    </tr>`).join(''):`<tr><td colspan="6"><div class="ept"><h4>No user accounts yet</h4><p>Add a user to get started.</p></div></td></tr>`;
+  return head('accts',`<button class="bt p" onclick="mNewAccount()">Add user</button>`)+`
+  <div class="c"><div class="b flush"><div class="tw"><table>
+    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div></div></div>`;
 }
 function mNewAccount(){
   show(`<div class="h"><h3>Add user account</h3><p>Creates a real login for a developer or team member.</p></div>
@@ -1143,6 +1197,8 @@ function vReleaseGrid(){
         <button class="bt s" ${rflt.page>=totalPages?'disabled':''} onclick="rflt.page++;draw()">Next →</button>
       </div>
     </div>`
+    :rflt.q?`<div class="ept"><h4>No releases found</h4><p>No records match the current search.</p>
+      <button class="bt s" style="margin-top:14px" onclick="clearRF()">Clear filters</button></div>`
     :`<div class="ept"><h4>No releases yet</h4><p>${canCreateHere?'Create one to get started.':'Nothing has been added yet.'}</p></div>`}
   </div></div>`;
 }
@@ -1429,7 +1485,9 @@ function vConflicts(){
         <button class="bt s" ${cflt.page>=totalPages?'disabled':''} onclick="cflt.page++;draw()">Next →</button>
       </div>
     </div>`
-    :'<div class="ept"><h4>No rows match</h4><p>Adjust the filters above, or add a row to get started.</p></div>'}
+    :projectRows.length?`<div class="ept"><h4>No conflicts found</h4><p>No records match the current filters.</p>
+      <button class="bt s" style="margin-top:14px" onclick="clearCF()">Clear filters</button></div>`
+    :`<div class="ept"><h4>No rows yet</h4><p>${canCreateHere?'Add a row to get started.':'Nothing has been added to this project yet.'}</p></div>`}
   </div></div>`;
 }
 /* ═══ Excel-style inline conflict editing ═
@@ -1529,8 +1587,8 @@ function vCal(){
 function vChg(){
   return head('chg',canEdit()?`<button class="bt p" onclick="mPull()">Record a pull</button>`:'')+`
   <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
-  <div class="c"><div class="b flush">
-    ${acts.map(v=>{
+  <div class="c"><div class="b flush">${acts.length?
+    acts.map(v=>{
       const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
       const hot=others.includes(me)&&!v.ack.includes(me);
       return `<div class="li ${hot?'hot':''}"><div class="gr">
@@ -1538,7 +1596,8 @@ function vChg(){
         <div class="d">${fdt(v.on)} · notified ${others.length} owner${others.length!==1?'s':''}: ${others.map(o=>E(U(o).nm)).join(', ')||'none'}</div>
         <div class="d">Acknowledged by ${v.ack.length?v.ack.map(o=>E(U(o).nm)).join(', '):'no one yet'}</div>
       </div>${hot?`<button class="bt s" onclick="ack('${v.id}')">Acknowledge</button>`:''}</div>`;
-    }).join('')}
+    }).join('')
+    :'<div class="ept"><h4>No change activity yet</h4><p>Pulls and applied changes will be logged here.</p></div>'}
   </div></div>`;
 }
 
@@ -1578,7 +1637,7 @@ async function sendManual(){
 /* ═══ notifications ═════════════════════ */
 function vNote(){
   return head('note',`<button class="bt" onclick="runCycle()">Run reminder cycle</button>`)+`
-  <div class="c"><div class="b flush"><div class="tw"><table>
+  <div class="c"><div class="b flush">${notifs.length?`<div class="tw"><table>
     <thead><tr><th>Sent</th><th>Type</th><th>Subject</th><th>Recipients</th><th>Status</th></tr></thead>
     <tbody>${notifs.map(n=>`<tr>
       <td class="mono" style="font-size:12px;white-space:nowrap;color:var(--mut)">${fdt(n.on)}</td>
@@ -1586,14 +1645,15 @@ function vNote(){
       <td class="tt" style="font-weight:500">${E(n.sub)}</td>
       <td class="mono" style="font-size:11.5px;color:var(--mut)">${n.to.map(t=>E(U(t).em)).join('<br>')}</td>
       <td>${n.ok?'<span class="stt s-ok"><i></i>Sent</span>':'<span class="stt s-bad"><i></i>Retried</span>'}</td>
-    </tr>`).join('')}</tbody></table></div></div></div>`;
+    </tr>`).join('')}</tbody></table></div>`
+    :'<div class="ept"><h4>No notifications yet</h4><p>Every message the application sends will show up here.</p></div>'}</div></div>`;
 }
 
 /* ═══ audit ═════════════════════════════ */
 function vAud(){
   return head('aud',`<button class="bt" onclick="exportCsv()">Export</button>`)+`
   <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
-  <div class="c"><div class="b flush"><div class="tw"><table>
+  <div class="c"><div class="b flush">${audit.length?`<div class="tw"><table>
     <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Release</th><th>Component</th><th>Transition</th><th>Reason</th></tr></thead>
     <tbody>${audit.map(a=>`<tr>
       <td class="mono" style="font-size:12px;white-space:nowrap;color:var(--mut)">${fdt(a.on)}</td>
@@ -1602,14 +1662,15 @@ function vAud(){
       <td>${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'—')}</td>
       <td style="color:var(--mut);font-size:12.5px">${a.prev==='—'?'—':`${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`}</td>
       <td style="color:var(--stop);font-size:12.5px">${E(a.rs||'')||'<span style="color:var(--mut2)">—</span>'}</td></tr>`).join('')}
-    </tbody></table></div></div></div>`;
+    </tbody></table></div>`
+    :'<div class="ept"><h4>No audit entries yet</h4><p>Every action taken in the application will be recorded here.</p></div>'}</div></div>`;
 }
 
 /* ═══ admin ═════════════════════════════ */
 function vUsr(){
   return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`)+`
   <div class="sec"><div class="mt">Inactive users are excluded from new approval and notification emails but remain visible in existing history.</div></div>
-  <div class="c"><div class="b flush"><div class="tw"><table>
+  <div class="c"><div class="b flush">${users.length?`<div class="tw"><table>
     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Responsibility</th><th>Components</th><th>Status</th><th></th></tr></thead>
     <tbody>${users.map(u=>`<tr>
       <td class="tt">${E(u.nm)}</td><td class="mono" style="font-size:11.5px;color:var(--mut)">${E(u.em)}</td>
@@ -1620,11 +1681,12 @@ function vUsr(){
         <button class="bt s" onclick="toggleU('${u.id}')">${u.active?'Deactivate':'Activate'}</button>
         <button class="bt s d" onclick="mDelUser('${u.id}')">Delete</button>
       </td>
-    </tr>`).join('')}</tbody></table></div></div></div>`;
+    </tr>`).join('')}</tbody></table></div>`
+    :'<div class="ept"><h4>No users yet</h4><p>Add a user to start routing approvals and alerts.</p></div>'}</div></div>`;
 }
 function vGrp(){
-  return head('grp')+`<div class="c"><div class="b flush">
-    ${groups.map(g=>`<div class="li" style="align-items:flex-start"><div class="gr">
+  return head('grp')+`<div class="c"><div class="b flush">${groups.length?
+    groups.map(g=>`<div class="li" style="align-items:flex-start"><div class="gr">
       <div class="t">${E(g.nm)}</div>
       <div class="d">Gate: ${SL(g.stage)} · escalates to ${E(U(g.esc).nm)} · reminder every ${g.remH}h, escalate after ${g.escH}h</div>
       <div class="chips" style="margin-top:9px">${g.members.map(m=>`<span class="chip ${U(m).active?'':'off'}">
@@ -1633,17 +1695,19 @@ function vGrp(){
       <select onchange="setCond('${g.id}',this.value)">
         <option value="any" ${g.cond==='any'?'selected':''}>Any one approver</option>
         <option value="all" ${g.cond==='all'?'selected':''}>All approvers</option>
-      </select></div></div>`).join('')}
+      </select></div></div>`).join('')
+    :'<div class="ept"><h4>No approval groups yet</h4><p>Approval groups decide who signs off at each gate.</p></div>'}
   </div></div>`;
 }
 function vCmp(){
-  return head('cmp')+`<div class="c"><div class="b flush">
-    ${comps.map(c=>`<div class="li" style="align-items:flex-start"><div class="gr">
+  return head('cmp')+`<div class="c"><div class="b flush">${comps.length?
+    comps.map(c=>`<div class="li" style="align-items:flex-start"><div class="gr">
       <div class="t">${E(c.nm)}</div>
       <div class="d">${rels.filter(r=>r.comp===c.id).length} releases tracked · change alerts go to the active owners below, excluding whoever made the change</div>
       <div class="chips" style="margin-top:9px">${c.owners.map(o=>`<span class="chip ${U(o).active?'':'off'}">
         <span class="n">${E(U(o).nm)}</span></span>`).join('')}</div>
-    </div></div>`).join('')}
+    </div></div>`).join('')
+    :'<div class="ept"><h4>No components yet</h4><p>Components group releases and drive who gets change alerts.</p></div>'}
   </div></div>`;
 }
 function vTpl(){
