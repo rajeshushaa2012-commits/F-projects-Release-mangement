@@ -1168,8 +1168,13 @@ function vRO(reason){
 
 /* ═══ my account ═════════════════════════ */
 function vMypw(){
-  return head('mypw')+`
-  <div class="c"><div class="b" style="max-width:420px">
+  return head('mypw','',[
+    {label:`Signed in as ${authUser?.name||'—'}`},
+    {label:roleForAccount(authUser||{}),tone:'teal'},
+    ...(authUser?.must_change_password?[{label:'Password change required',tone:'wait'}]:[])
+  ])+`
+  <div class="c" style="max-width:460px"><div class="h"><h3>Update your password</h3></div>
+    <div class="b">
     <label>Current password</label><input id="pw-old" type="password" style="margin-bottom:14px">
     <label>New password</label><input id="pw-new" type="password" style="margin-bottom:14px">
     <label>Confirm new password</label><input id="pw-new2" type="password" style="margin-bottom:8px">
@@ -1269,7 +1274,13 @@ function vAccts(){
     ${kpiCard({accent:'a-wait',label:'Admins',value:adminCount,icon:'🔑',icCls:'wait',hint:'full access',
       act:{label:'View admins',on:"setAcctScope('Admin')"}})}
   </div></div>`:'';
-  return head('accts',`<button class="bt p" onclick="mNewAccount()">+ Add user</button>`)+summary+`
+  return head('accts',`<button class="bt p" onclick="mNewAccount()">+ Add user</button>`,
+    accountsLoaded?[
+      {label:`${accounts.length} account${accounts.length!==1?'s':''}`},
+      {label:`${activeCount} active`,tone:'go'},
+      {label:`${adminCount} admin${adminCount!==1?'s':''}`,tone:'wait'},
+      ...(accounts.length-activeCount?[{label:`${accounts.length-activeCount} deactivated`,tone:'stop'}]:[])
+    ]:[{label:'Loading accounts…'}])+summary+`
   <div class="c sec"><div class="h"><h3>${acctScope==='all'?'All accounts':E(ACCT_SCOPE_LABEL[acctScope])} · ${shown.length}</h3>
     ${acctScope!=='all'?`<div class="r"><button class="lk" onclick="setAcctScope('all')">Clear filter</button></div>`:''}</div>
     <div class="b flush"><div class="tw"><table class="xgrid">
@@ -1667,7 +1678,12 @@ function vMine(){
   const scoped=pendScope==='all'?p:p.filter(x=>x.k===pendScope);
   const sorted=scoped.slice().sort((a,b)=>(PEND_RANK[a.k]??1)-(PEND_RANK[b.k]??1));
   const scopeLabel={all:'',ack:'Critical',move:'Action needed',await:'Waiting on others'}[pendScope];
-  return head('mine')+`<div class="sec"><div class="kpis">
+  return head('mine','',[
+    {label:`${p.length} item${p.length!==1?'s':''} need you`},
+    ...(critCount?[{label:`${critCount} critical`,tone:'stop'}]:[]),
+    ...(moveCount?[{label:`${moveCount} ready to advance`,tone:'wait'}]:[]),
+    ...(awaitCount?[{label:`${awaitCount} waiting on others`,tone:'teal'}]:[])
+  ])+`<div class="sec"><div class="kpis">
     ${kpiCard({accent:'a-info',label:'Needs You',value:p.length,icon:'⏳',hint:'total items',
       act:{label:'View all',on:"setPendScope('all')"}})}
     ${kpiCard({accent:'a-stop',label:'Critical',value:critCount,nCls:critCount?'s':'',icon:'🚨',icCls:'stop',
@@ -1832,7 +1848,9 @@ function vReleaseGrid(){
     tabs+
     (!cat.editable?`<div class="sec"><div class="mt">Read-only view — same release data as My Team Release. Switch to the My Team Release tab to edit.</div></div>`:'')+
     releasePipeline()+`
-  <div class="sec c"><div class="b">
+  <div class="sec c"><div class="h"><h3>Find a release</h3>
+    ${(rflt.q||rflt.scope!=='all'||rflt.sort!=='nameAsc')?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
+    <div class="b">
     <div class="fg">
       <div><label>Search</label><input value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
         oninput="rflt.q=this.value;rflt.page=1;clearTimeout(window._rf);window._rf=setTimeout(draw,220)"></div>
@@ -1847,7 +1865,10 @@ function vReleaseGrid(){
     <div style="margin-top:14px"><button class="bt s" onclick="clearRF()">Clear filters</button></div>
   </div></div>
 
-  <div class="c"><div class="b flush">${(pageRows.length||showDraft)?`
+  <div class="c"><div class="h"><h3>${E(cat.nav)} · ${all.length}</h3>
+    <div class="r"><span class="tag">${cat.editable?'Editable':'Read-only'}</span>
+      <span class="tag">${cols.length} columns</span></div></div>
+    <div class="b flush">${(pageRows.length||showDraft)?`
     <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
     <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
       ${showActionCol?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
@@ -2161,7 +2182,10 @@ function vConflicts(){
     </div></div>
   </div>`;
 
-  const filterToolbar=`<div class="sec c"><div class="b">
+  const cfFiltersActive=cflt.q||cflt.progress!=='all'||cflt.status!=='all'||cflt.modeOfRelease!=='all'||cflt.releaseMonth!=='all'||cflt.sort!=='default';
+  const filterToolbar=`<div class="sec c"><div class="h"><h3>Find a row</h3>
+    ${cfFiltersActive?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
+    <div class="b">
     <div class="fg">
       <div><label>Search</label><input value="${E(cflt.q)}" placeholder="Wave, Feature#, Story#, description, developers"
         oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(draw,220)"></div>
@@ -2185,7 +2209,9 @@ function vConflicts(){
     <div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>
   </div></div>`;
 
-  const gridCard=`<div class="c"><div class="b flush">${(pageRows.length||showDraft)?`
+  const gridCard=`<div class="c"><div class="h"><h3>${E(conflictProject)} · ${all.length}</h3>
+    <div class="r"><span class="tag">${cols.length+1} columns</span></div></div>
+    <div class="b flush">${(pageRows.length||showDraft)?`
     <div style="overflow:auto;max-height:70vh"><table class="xgrid" style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
     <thead><tr><th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${SLNO_W}px">Sl.no</th>
       ${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
@@ -2233,7 +2259,8 @@ function vConflicts(){
         {label:`${conflicts.length} row${conflicts.length!==1?'s':''} across all projects`},
         {label:`${PROJECT_NAMES.length} project tabs`,tone:'teal'}
       ])+
-      projTabs+`<div class="sec"><div class="c"><div class="b">
+      projTabs+`<div class="sec"><div class="c"><div class="h"><h3>${E(conflictProject)}</h3>
+        <div class="r"><span class="tag">No rows</span></div></div><div class="b">
         <div class="chart-empty">
           <div class="ic">🗂</div>
           <h4>No tracker records yet</h4>
@@ -2394,8 +2421,8 @@ function vChg(){
     unack?{label:`${unack} awaiting acknowledgement`,tone:'wait'}:{label:'All acknowledged',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
-  <div class="c sec">${chgFilter.k!=='all'?`<div class="h"><h3>${E(chgFilterLabel())} · ${shownActs.length}</h3>
-      <div class="r"><button class="lk" onclick="setChgFilter('all',null)">Clear filter</button></div></div>`:''}
+  <div class="c sec"><div class="h"><h3>${chgFilter.k!=='all'?E(chgFilterLabel()):'Change feed'} · ${shownActs.length}</h3>
+      ${chgFilter.k!=='all'?`<div class="r"><button class="lk" onclick="setChgFilter('all',null)">Clear filter</button></div>`:''}</div>
     <div class="b flush"><div class="feed">${shownActs.length?
       shownActs.map(v=>{
         const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
@@ -2460,11 +2487,18 @@ function chgRail(){
 
 /* ═══ compose email ═════════════════════ */
 function vMail(){
-  return head('mail')+`
+  const activeN=users.filter(u=>u.active).length;
+  return head('mail','',[
+    emailConfigured?{label:'Email configured',tone:'go'}:{label:'Email not configured',tone:'stop'},
+    {label:`${activeN} active recipient${activeN!==1?'s':''}`,tone:'teal'},
+    {label:`${notifs.length} message${notifs.length!==1?'s':''} sent to date`}
+  ])+`
   ${!emailConfigured?`<div class="sec"><div class="mt w">Email sending is not configured on the server yet. Set <b>RELAY_SMTP_USER</b> (a Gmail address) and <b>RELAY_SMTP_PASS</b> (its Gmail App Password) as environment variables on the server, then restart it.</div></div>`
     :`<div class="sec"><div class="mt">Sending as ${E(emailFrom)}.</div></div>`}
   <div class="cols">
-    <div class="c"><div class="b">
+    <div class="c"><div class="h"><h3>New message</h3>
+      <div class="r"><span class="tag">${emailConfigured?'Ready to send':'Sending disabled'}</span></div></div>
+      <div class="b">
       <div class="fg" style="margin-bottom:16px">
         <div><label>To</label><input id="mt" placeholder="name@gmail.com, other@gmail.com"></div>
         <div><label>Or pick a user</label><select id="mtu" onchange="if(this.value)document.getElementById('mt').value=U(this.value).em">
@@ -2519,8 +2553,8 @@ function vNote(){
     {label:`${okCount} sent`,tone:'go'},
     ...(badCount?[{label:`${badCount} retried`,tone:'stop'}]:[])
   ])+`
-  <div class="c sec">${noteFilter.k!=='all'?`<div class="h"><h3>${E(noteFilterLabel())} · ${shownNotifs.length}</h3>
-      <div class="r"><button class="lk" onclick="setNoteFilter('all',null)">Clear filter</button></div></div>`:''}
+  <div class="c sec"><div class="h"><h3>${noteFilter.k!=='all'?E(noteFilterLabel()):'Message log'} · ${shownNotifs.length}</h3>
+      ${noteFilter.k!=='all'?`<div class="r"><button class="lk" onclick="setNoteFilter('all',null)">Clear filter</button></div>`:''}</div>
     <div class="b flush"><div class="feed">${shownNotifs.length?
       shownNotifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
         <div class="ft">${E(n.sub)} <span class="tag" style="margin-left:4px">${E(n.ty)}</span></div>
@@ -2587,8 +2621,8 @@ function vAud(){
     {label:'Append-only',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
-  <div class="c sec">${audFilter.k!=='all'?`<div class="h"><h3>${E(audFilterLabel())} · ${shownAudit.length}</h3>
-      <div class="r"><button class="lk" onclick="setAudFilter('all',null)">Clear filter</button></div></div>`:''}
+  <div class="c sec"><div class="h"><h3>${audFilter.k!=='all'?E(audFilterLabel()):'Audit log'} · ${shownAudit.length}</h3>
+      ${audFilter.k!=='all'?`<div class="r"><button class="lk" onclick="setAudFilter('all',null)">Clear filter</button></div>`:''}</div>
     <div class="b flush"><div class="feed">${shownAudit.length?
       shownAudit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
         <div class="ft">${E(U(a.ac).nm)} — ${E(a.act)}${a.rel?` <span class="tag" style="margin-left:4px">${E(R(a.rel).ref)}</span>`:''}</div>
@@ -2663,7 +2697,11 @@ function vUsr(){
     ${kpiCard({accent:'a-stop',label:'Inactive',value:users.length-activeCount,icon:'⏸',hint:'excluded from new mail',
       act:{label:'View inactive',on:"setUsrScope('inactive')"}})}
   </div></div>`:'';
-  return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`)+summary+`
+  return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`,[
+    {label:`${users.length} user${users.length!==1?'s':''} in the directory`},
+    {label:`${activeCount} active`,tone:'go'},
+    ...(users.length-activeCount?[{label:`${users.length-activeCount} inactive`,tone:'stop'}]:[])
+  ])+summary+`
   <div class="sec"><div class="mt">Inactive users are excluded from new approval and notification emails but remain visible in existing history.</div></div>
   <div class="c"><div class="h"><h3>${usrScope==='all'?'All users':usrScope==='active'?'Active users':'Inactive users'} · ${shownUsers.length}</h3>
     ${usrScope!=='all'?`<div class="r"><button class="lk" onclick="setUsrScope('all')">Clear filter</button></div>`:''}</div>
@@ -2701,6 +2739,7 @@ function vGrp(){
     {label:`${gates} gate${gates!==1?'s':''} covered`,tone:'teal'},
     {label:`${members} approver${members!==1?'s':''}`,tone:'go'}
   ])+`
+  <div class="sec"><div class="mt">Each group signs one gate. "Any one approver" clears the gate on the first approval; "All approvers" needs every member to sign.</div></div>
   <div class="cards-grid">
     ${groups.map(g=>{const openN=openApprovalsForGroup(g.id);return `<div class="c"><div class="h"><h3>${E(g.nm)}</h3>
       <div class="r"><span class="tag">${SL(g.stage)}</span></div></div>
@@ -2725,6 +2764,7 @@ function vCmp(){
     {label:`${rels.length} release${rels.length!==1?'s':''} tracked`,tone:'teal'},
     {label:`${owners} owner${owners!==1?'s':''}`,tone:'go'}
   ])+`
+  <div class="sec"><div class="mt">A component groups related releases and defines who is alerted when someone pulls or applies a change to it.</div></div>
   <div class="cards-grid">
     ${comps.map(c=>{
       const cr=rels.filter(r=>r.comp===c.id);
@@ -2753,7 +2793,8 @@ function vTpl(){
   return head('tpl','',[{label:`${tmpl.length} template${tmpl.length!==1?'s':''}`},
     {label:'Used for every automated message',tone:'teal'}])+`
   <div class="sec"><div class="mt">Fields in braces are replaced when a message is generated. Nothing beyond these fields is ever included in outbound email.</div></div>
-  ${tmpl.map((t,i)=>`<div class="c sec" style="max-width:820px"><div class="h"><h3>${E(t.ev)}</h3></div><div class="b">
+  ${tmpl.map((t,i)=>`<div class="c sec" style="max-width:820px"><div class="h"><h3>${E(t.ev)}</h3>
+    <div class="r"><span class="tag">Template ${i+1} of ${tmpl.length}</span></div></div><div class="b">
     <div style="margin-bottom:14px"><label>Subject</label><input value="${E(t.sub)}" oninput="tmpl[${i}].sub=this.value"></div>
     <div><label>Body</label><textarea rows="8" style="font-family:var(--m);font-size:12.5px" oninput="tmpl[${i}].bd=this.value">${E(t.bd)}</textarea></div>
     <button class="bt s" style="margin-top:12px" onclick="persist();toast('Template saved')">Save template</button>
