@@ -42,14 +42,16 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
-  /* A soft navy/teal wash behind every page instead of flat gray — most
-     visible on shorter pages where content doesn't fill the viewport,
-     so empty space still reads as a designed surface, not a blank one. */
+  /* App canvas. A faint dot grid plus a soft navy/teal wash, so open
+     areas of a page read as a designed surface instead of blank white.
+     Cards are opaque, so the texture only shows where the page is
+     genuinely empty. Fixed attachment keeps it steady while scrolling. */
   background:
-    radial-gradient(1100px 620px at 12% -8%, rgba(27,58,99,.05), transparent 58%),
-    radial-gradient(900px 520px at 100% 0%, rgba(14,124,134,.055), transparent 55%),
-    var(--paper);
-  background-attachment:fixed;
+    radial-gradient(rgba(27,58,99,.085) 1px, transparent 1.4px) 0 0/22px 22px,
+    radial-gradient(1200px 660px at 12% -10%, rgba(27,58,99,.07), transparent 60%),
+    radial-gradient(980px 560px at 100% 0%, rgba(14,124,134,.075), transparent 58%),
+    linear-gradient(180deg,#F7F9FC 0%,#EEF2F7 100%);
+  background-attachment:fixed,fixed,fixed,fixed;
   color:var(--ink);font-family:var(--b);font-size:14px;line-height:1.6;
   -webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
 :focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:4px}
@@ -105,7 +107,7 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .acct .menu button.dgr{color:var(--stop)}
 
 .main{min-width:0;display:flex;flex-direction:column}
-.top{background:rgba(244,245,247,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+.top{background:rgba(247,249,252,.72);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);
   padding:0 34px;height:57px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:20}
 .crumb{font-size:12.5px;color:var(--mut);font-weight:500}
 .top .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
@@ -291,6 +293,11 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .cols>*{min-width:0}
 .cols .c+.c{margin-top:22px}
 @media(max-width:1200px){.cols{grid-template-columns:1fr}}
+/* Summary strip — the same context panels laid out horizontally BELOW the
+   primary content. Used where the main list is short: a tall side rail
+   next to a short list leaves an L-shaped hole, this never can. */
+.summary{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-items:start}
+.summary .c+.c{margin-top:0}
 
 /* ── compact stat rows — the shared vocabulary for context panels ── */
 .srow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
@@ -1085,12 +1092,10 @@ function vAccts(){
     <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Admins</div><div class="n">${adminCount}</div></div><div class="ic wait">🔑</div></div><div class="h">full access</div></div>
   </div></div>`:'';
   return head('accts',`<button class="bt p" onclick="mNewAccount()">+ Add user</button>`)+summary+`
-  <div class="cols">
-    <div class="c"><div class="b flush"><div class="tw"><table class="xgrid">
-      <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div></div></div>
-    <div>${acctsRail()}</div>
-  </div>`;
+  <div class="c sec"><div class="b flush"><div class="tw"><table class="xgrid">
+    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div></div></div>
+  <div class="summary">${acctsRail()}</div>`;
 }
 /* Accounts rail: what each role actually grants, straight out of
    ROLE_PRESETS, plus the live role split. Config, not invented copy. */
@@ -2137,8 +2142,7 @@ function vChg(){
     unack?{label:`${unack} awaiting acknowledgement`,tone:'wait'}:{label:'All acknowledged',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
-  <div class="cols">
-    <div class="c"><div class="b flush"><div class="feed">${acts.length?
+  <div class="c sec"><div class="b flush"><div class="feed">${acts.length?
       acts.map(v=>{
         const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
         const hot=others.includes(me)&&!v.ack.includes(me);
@@ -2148,9 +2152,8 @@ function vChg(){
         </div><div class="fw">${fdRel(v.on)}</div>${hot?`<button class="bt s" style="margin-left:10px" onclick="ack('${v.id}')">Acknowledge</button>`:''}</div>`;
       }).join('')
       :chartEmpty('🔔','No change activity yet','Pulls and applied changes will be logged here.')}
-    </div></div></div>
-    <div>${chgRail()}</div>
-  </div>`;
+  </div></div></div>
+  <div class="summary">${chgRail()}</div>`;
 }
 /* Change-activity rail: which components see the most churn, and who is
    driving it. Both counted straight from acts[]. */
@@ -2229,16 +2232,14 @@ function vNote(){
     {label:`${okCount} sent`,tone:'go'},
     ...(badCount?[{label:`${badCount} retried`,tone:'stop'}]:[])
   ])+`
-  <div class="cols">
-    <div class="c"><div class="b flush"><div class="feed">${notifs.length?
+  <div class="c sec"><div class="b flush"><div class="feed">${notifs.length?
       notifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
         <div class="ft">${E(n.sub)} <span class="tag" style="margin-left:4px">${E(n.ty)}</span></div>
         <div class="fm">To ${n.to.length} recipient${n.to.length!==1?'s':''}: ${n.to.map(t=>E(U(t).em)).join(', ')} ${n.ok?'<span class="stt s-ok" style="margin-left:4px"><i></i>Sent</span>':'<span class="stt s-bad" style="margin-left:4px"><i></i>Retried</span>'}</div>
       </div><div class="fw">${fdRel(n.on)}</div></div>`).join('')
       :chartEmpty('📨','No notifications yet','Every message the application sends will show up here.')}
-    </div></div></div>
-    <div>${noteRail()}</div>
-  </div>`;
+  </div></div></div>
+  <div class="summary">${noteRail()}</div>`;
 }
 /* Notification rail: message mix, delivery outcome, and who actually
    receives mail — all counted from notifs[]. */
@@ -2267,16 +2268,14 @@ function vAud(){
     {label:'Append-only',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
-  <div class="cols">
-    <div class="c"><div class="b flush"><div class="feed">${audit.length?
+  <div class="c sec"><div class="b flush"><div class="feed">${audit.length?
       audit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
         <div class="ft">${E(U(a.ac).nm)} — ${E(a.act)}${a.rel?` <span class="tag" style="margin-left:4px">${E(R(a.rel).ref)}</span>`:''}</div>
         <div class="fm">${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'')}${a.prev!=='—'?` · ${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`:''}${a.rs?` · <span style="color:var(--stop)">${E(a.rs)}</span>`:''}</div>
       </div><div class="fw">${fdRel(a.on)}</div></div>`).join('')
       :chartEmpty('📋','No audit entries yet','Every action taken in the application will be recorded here.')}
-    </div></div></div>
-    <div>${audRail()}</div>
-  </div>`;
+  </div></div></div>
+  <div class="summary">${audRail()}</div>`;
 }
 /* Audit rail: who is acting and how recently, from audit[] only. */
 function audRail(){
