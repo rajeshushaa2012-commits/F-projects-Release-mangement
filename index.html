@@ -83,13 +83,16 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 body.auth .rail,body.auth .top{display:none}
 body.auth .shell{grid-template-columns:1fr}
 body.auth .body{padding:0;max-width:none}
-.auth-split{display:grid;grid-template-columns:56% 1fr;min-height:100vh}
-.auth-art{position:relative;overflow:hidden;padding:46px 48px;display:flex;
-  flex-direction:column;justify-content:space-between;
+/* The gradient now covers the whole screen and the sign-in card floats
+   on it — no separate white column. */
+.auth-split{position:relative;display:grid;grid-template-columns:54% 1fr;min-height:100vh;
   background:linear-gradient(150deg,#12283F 0%,#1B3A63 52%,#0E6068 100%)}
-.auth-art::before{content:'';position:absolute;inset:0;
-  background:radial-gradient(620px 320px at 88% -30%, rgba(20,163,177,.40), transparent 66%),
-             radial-gradient(460px 280px at 2% 120%, rgba(46,109,180,.34), transparent 70%)}
+.auth-split::before{content:'';position:absolute;inset:0;
+  background:radial-gradient(760px 420px at 78% -22%, rgba(20,163,177,.34), transparent 66%),
+             radial-gradient(560px 340px at 2% 118%, rgba(46,109,180,.32), transparent 70%)}
+.auth-split>*{position:relative;z-index:1}
+.auth-art{position:relative;overflow:hidden;padding:46px 48px;display:flex;
+  flex-direction:column;justify-content:space-between}
 .auth-art::after{content:'';position:absolute;inset:0;opacity:.5;
   background-image:linear-gradient(rgba(255,255,255,.055) 1px,transparent 1px),
                    linear-gradient(90deg,rgba(255,255,255,.055) 1px,transparent 1px);
@@ -117,8 +120,9 @@ body.auth .body{padding:0;max-width:none}
 .auth-gates i:nth-child(3){width:42%;margin-left:14%;opacity:.56}
 .auth-gates i:nth-child(4){width:32%;margin-left:21%;opacity:.34}
 .auth-foot{font-size:12px;color:rgba(224,235,247,.5)}
-.auth-form{display:grid;place-items:center;padding:40px 32px;background:var(--card)}
-.auth-box{width:100%;max-width:340px}
+.auth-form{display:grid;place-items:center;padding:40px 32px}
+.auth-box{width:100%;max-width:352px;background:var(--card);border-radius:18px;
+  padding:34px 32px 32px;box-shadow:0 26px 64px rgba(6,16,30,.42),0 6px 18px rgba(6,16,30,.28)}
 .auth-box h3{font-family:var(--d);font-size:23px;font-weight:700;letter-spacing:-.028em;
   color:var(--ink);margin-bottom:5px}
 .auth-box .sub{color:var(--mut);font-size:13.5px;margin-bottom:22px}
@@ -135,7 +139,7 @@ body.auth .body{padding:0;max-width:none}
 @media(max-width:900px){
   .auth-split{grid-template-columns:1fr}
   .auth-art{display:none}
-  .auth-form{min-height:100vh;align-content:center}
+  .auth-form{min-height:100vh;align-content:center;padding:28px 20px}
   .auth-mini{display:flex}
 }
 .ngrp{padding:18px 20px 8px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
