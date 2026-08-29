@@ -283,6 +283,36 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
 @media(max-width:1040px){.grid,.g2{grid-template-columns:1fr}}
 
+/* ── page columns: primary work area + context rail ───────
+   The answer to "content only fills the top of a wide screen" is to put
+   real secondary context beside the primary content, not to stretch the
+   primary card. Collapses to a single column below 1200px. */
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}
+.cols>*{min-width:0}
+.cols .c+.c{margin-top:22px}
+@media(max-width:1200px){.cols{grid-template-columns:1fr}}
+
+/* ── compact stat rows — the shared vocabulary for context panels ── */
+.srow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.srow:last-child{border-bottom:0}
+.srow .sw{width:9px;height:9px;border-radius:3px;flex:none}
+.srow .lbl{flex:1;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .val{font-family:var(--d);font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);flex:none}
+.srow .sub{font-size:11.5px;color:var(--mut);flex:none}
+/* Thin proportion meter used inside stat rows and pipeline strips. */
+.meter{height:6px;border-radius:4px;background:var(--sunk);overflow:hidden;margin-top:7px}
+.meter span{display:block;height:100%;border-radius:4px}
+
+/* ── pipeline strip: one column per workflow stage ── */
+.pipe{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+.pipe .stg{background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.pipe .stg .n{font-family:var(--d);font-size:22px;font-weight:700;line-height:1;letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums}
+.pipe .stg .l{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--mut);margin-top:7px;line-height:1.35}
+.pipe .stg.on{background:var(--navy-bg);border-color:var(--navy-ln)}
+.pipe .stg.on .n{color:var(--navy)}
+
 /* ── buttons ───────────────────────────── */
 .bt{font-family:var(--b);font-size:13px;font-weight:500;padding:8px 15px;border-radius:8px;
   border:1px solid var(--line2);background:var(--card);color:var(--ink);cursor:pointer;
@@ -1055,9 +1085,33 @@ function vAccts(){
     <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Admins</div><div class="n">${adminCount}</div></div><div class="ic wait">🔑</div></div><div class="h">full access</div></div>
   </div></div>`:'';
   return head('accts',`<button class="bt p" onclick="mNewAccount()">+ Add user</button>`)+summary+`
-  <div class="c"><div class="b flush"><div class="tw"><table>
-    <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-    <tbody>${rows}</tbody></table></div></div></div>`;
+  <div class="cols">
+    <div class="c"><div class="b flush"><div class="tw"><table class="xgrid">
+      <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div></div>
+    <div>${acctsRail()}</div>
+  </div>`;
+}
+/* Accounts rail: what each role actually grants, straight out of
+   ROLE_PRESETS, plus the live role split. Config, not invented copy. */
+function acctsRail(){
+  const roleColor={Admin:'var(--wait)','Release Team':'var(--info)',Developer:'var(--teal)',Custom:'var(--mut2)'};
+  const split=countBy(accounts,a=>roleForAccount(a))
+    .map(([label,count])=>({label,val:count,color:roleColor[label]||'var(--navy)',
+      pct:Math.round(count/Math.max(1,accounts.length)*100)}));
+  const roleDefs=[
+    {name:'Admin',desc:'Full access, including user management'},
+    {name:'Release Team',desc:`${ROLE_PRESETS['Release Team'].length} permissions — create, edit and delete releases and conflicts, plus file upload`},
+    {name:'Developer',desc:`${ROLE_PRESETS['Developer'].length} permissions — view releases and conflicts, download files`},
+  ];
+  const defs=roleDefs.map(r=>`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="sw" style="width:9px;height:9px;border-radius:3px;background:${roleColor[r.name]}"></span>
+      <b style="font-size:13px;font-weight:600">${E(r.name)}</b></div>
+    <div style="font-size:12px;color:var(--mut);margin-top:4px;line-height:1.5">${E(r.desc)}</div>
+  </div>`).join('');
+  return panel('Role split',statRows(split,'No accounts yet.'))
+   + panel('What each role grants',`<div style="margin:-10px 0">${defs}</div>`);
 }
 function mNewAccount(){
   show(`<div class="h"><h3>Add user account</h3><p>Creates a real login for a developer or team member.</p></div>
@@ -1221,6 +1275,34 @@ function donutChart(segments,centerLabel){
 }
 /* Pure-CSS horizontal bar chart. rows: [[label,count]]. */
 /* Shared empty-state block for chart/insight cards — see .chart-empty. */
+/* Shared context-panel primitives. Every secondary panel in the app is
+   built from these so pages don't each invent their own markup. */
+function panel(title,body,tagText){
+  return `<div class="c"><div class="h"><h3>${E(title)}</h3>
+    ${tagText?`<div class="r"><span class="tag">${E(tagText)}</span></div>`:''}</div>
+    <div class="b">${body}</div></div>`;
+}
+/* rows: [{label, val, color?, sub?, pct?}] — pct draws a proportion meter. */
+function statRows(rows,emptyMsg){
+  if(!rows.length)return `<p style="color:var(--mut);font-size:12.5px">${E(emptyMsg||'Nothing to show yet.')}</p>`;
+  return rows.map(r=>`<div class="srow">
+    ${r.color?`<span class="sw" style="background:${r.color}"></span>`:''}
+    <span class="lbl">${E(r.label)}</span>
+    ${r.sub?`<span class="sub">${E(r.sub)}</span>`:''}
+    <span class="val">${E(String(r.val))}</span>
+  </div>${r.pct!=null?`<div class="meter"><span style="width:${Math.max(3,r.pct)}%;background:${r.color||'var(--teal)'}"></span></div>`:''}`).join('');
+}
+/* Whole days between an ISO-ish timestamp and now. Used for aging. */
+function daysSince(s){
+  if(!s)return null;
+  const d=new Date(s); if(isNaN(d))return null;
+  return Math.max(0,Math.floor((Date.now()-d.getTime())/86400000));
+}
+function ageLabel(s){
+  const d=daysSince(s);
+  if(d==null)return '—';
+  return d===0?'today':d===1?'1 day':`${d} days`;
+}
 function chartEmpty(icon,title,msg){
   return `<div class="chart-empty"><div class="ic">${icon}</div><h4>${E(title)}</h4><p>${E(msg)}</p></div>`;
 }
@@ -1369,19 +1451,60 @@ function vMine(){
     <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Action Needed</div><div class="n ${moveCount?'w':''}">${moveCount}</div></div><div class="ic wait">➡</div></div><div class="h">${moveCount?`<span class="trend wait">ready to advance</span>`:`<span class="trend go">None</span>`}</div></div>
     <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">Waiting on Others</div><div class="n">${awaitCount}</div></div><div class="ic teal">👥</div></div><div class="h">approvals in flight</div></div>
   </div></div>
-  <div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
-  ${sorted.map(x=>{
-    if(x.k==='await'){const pend=G(x.a.grp).members.filter(m=>!x.a.dec.some(d=>d.u===m));
-      return `<div class="li"><div class="gr"><div class="t">Awaiting approval — ${E(x.r.nm)} <span class="tag" style="margin-left:6px">Waiting on others</span></div>
-      <div class="d">${x.r.ref} · ${SL(x.a.stage)} · requested ${fdt(x.a.on)}<br>Yet to respond: ${pend.map(m=>E(U(m).nm)).join(', ')||'none'}</div></div>
-      <button class="bt s" onclick="openR('${x.r.id}')">Open</button></div>`}
-    if(x.k==='move')return `<div class="li"><div class="gr"><div class="t">Ready to move on — ${E(x.r.nm)} <span class="stt s-wait" style="margin-left:6px"><i></i>Action needed</span></div>
-      <div class="d">${x.r.ref} · currently ${SL(x.r.cur)}</div></div>
-      <button class="bt s p" onclick="openR('${x.r.id}')">Open</button></div>`;
-    return `<div class="li hot"><div class="gr"><div class="t">${E(U(x.v.by).nm)} pulled changes on ${E(C(x.v.comp).nm)} <span class="stt s-bad" style="margin-left:6px"><i></i>Critical</span></div>
-      <div class="d">${fdt(x.v.on)} — take the latest before continuing</div></div>
-      <button class="bt s" onclick="ack('${x.v.id}')">Acknowledge</button></div>`;
-  }).join('')}</div></div>`;
+  <div class="cols">
+    <div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
+    ${sorted.map(x=>{
+      if(x.k==='await'){const pend=G(x.a.grp).members.filter(m=>!x.a.dec.some(d=>d.u===m));
+        return `<div class="li"><div class="gr"><div class="t">Awaiting approval — ${E(x.r.nm)} <span class="tag" style="margin-left:6px">Waiting on others</span></div>
+        <div class="d">${x.r.ref} · ${SL(x.a.stage)} · requested ${fdt(x.a.on)}<br>Yet to respond: ${pend.map(m=>E(U(m).nm)).join(', ')||'none'}</div></div>
+        <button class="bt s" onclick="openR('${x.r.id}')">Open</button></div>`}
+      if(x.k==='move')return `<div class="li"><div class="gr"><div class="t">Ready to move on — ${E(x.r.nm)} <span class="stt s-wait" style="margin-left:6px"><i></i>Action needed</span></div>
+        <div class="d">${x.r.ref} · currently ${SL(x.r.cur)}</div></div>
+        <button class="bt s p" onclick="openR('${x.r.id}')">Open</button></div>`;
+      return `<div class="li hot"><div class="gr"><div class="t">${E(U(x.v.by).nm)} pulled changes on ${E(C(x.v.comp).nm)} <span class="stt s-bad" style="margin-left:6px"><i></i>Critical</span></div>
+        <div class="d">${fdt(x.v.on)} — take the latest before continuing</div></div>
+        <button class="bt s" onclick="ack('${x.v.id}')">Acknowledge</button></div>`;
+    }).join('')}</div></div>
+    <div>${mineRail(sorted)}</div>
+  </div>`;
+}
+/* Context rail for Pending Actions — aging and gate distribution, both
+   derived from the same items already in the list (approval request
+   dates and change-activity timestamps). No invented data. */
+function mineRail(items){
+  const dated=items.map(x=>({
+    label:x.k==='await'?`${x.r.ref} · ${SL(x.a.stage)}`
+         :x.k==='move'?`${x.r.ref} · ${SL(x.r.cur)}`
+         :`${C(x.v.comp).nm} change`,
+    on:x.k==='await'?x.a.on:x.k==='ack'?x.v.on:null
+  })).filter(d=>d.on).sort((a,b)=>a.on.localeCompare(b.on));
+  const aging=dated.map(d=>{
+    const days=daysSince(d.on);
+    return {label:d.label, val:ageLabel(d.on),
+      color:days>=7?'var(--stop)':days>=3?'var(--wait)':'var(--go)'};
+  });
+  const gateRows=countBy(items.filter(x=>x.r),x=>SL(x.r.cur))
+    .map(([label,count])=>({label, val:count, color:'var(--navy)',
+      pct:Math.round(count/items.filter(x=>x.r).length*100)}));
+  return panel('Waiting time',
+      statRows(aging,'No dated items waiting.'),
+      aging.length?`oldest ${aging[0].val}`:'')
+   + panel('Where they sit', statRows(gateRows,'No releases in this list.'));
+}
+
+/* Horizontal pipeline strip — one tile per workflow gate with the live
+   count of releases sitting there. Uses STAGES + rels[].cur, so it can
+   never drift from the actual workflow. Horizontal by design: it adds
+   information without pushing the grid down the page. */
+function releasePipeline(){
+  if(!rels.length)return '';
+  return `<div class="sec"><div class="c"><div class="h"><h3>Pipeline</h3>
+    <div class="r"><span class="tag">${rels.length} total</span></div></div>
+    <div class="b"><div class="pipe">
+      ${STAGES.map(s=>{const n=rels.filter(r=>r.cur===s.k).length;
+        return `<div class="stg ${n?'on':''}"><div class="n" style="${n?'':'color:var(--mut2)'}">${n}</div>
+          <div class="l">${E(s.nm)}</div></div>`;}).join('')}
+    </div></div></div></div>`;
 }
 
 /* ═══ releases ══════════════════════════ */
@@ -1462,7 +1585,8 @@ function vReleaseGrid(){
       {label:`${liveCount} released`,tone:'go'}
     ])+
     tabs+
-    (!cat.editable?`<div class="sec"><div class="mt">Read-only view — same release data as My Team Release. Switch to the My Team Release tab to edit.</div></div>`:'')+`
+    (!cat.editable?`<div class="sec"><div class="mt">Read-only view — same release data as My Team Release. Switch to the My Team Release tab to edit.</div></div>`:'')+
+    releasePipeline()+`
   <div class="sec c"><div class="b">
     <div class="fg">
       <div><label>Search</label><input value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
@@ -1961,7 +2085,7 @@ function vCal(){
   return head('cal','',[
     {label:`${thisMonth} in ${MF[m]} ${y}`,tone:'teal'},
     {label:`${allPlanned} upcoming overall`}
-  ])+`<div class="c"><div class="h"><h3>${MF[m]} ${y}</h3>
+  ])+`<div class="cols"><div class="c"><div class="h"><h3>${MF[m]} ${y}</h3>
     <div class="r"><button class="bt s" onclick="calMonth=new Date(${y},${m-1},1);draw()">←</button>
     <button class="bt s" onclick="calMonth=new Date();draw()">Today</button>
     <button class="bt s" onclick="calMonth=new Date(${y},${m+1},1);draw()">→</button></div></div>
@@ -1981,7 +2105,28 @@ function vCal(){
       <div class="row"><span class="sw" style="background:var(--wait)"></span>Business approval</div>
       <div class="row"><span class="sw" style="background:var(--navy)"></span>Production</div>
       <div class="row"><span class="sw" style="background:var(--go)"></span>Released</div>
-    </div></div></div>`;
+    </div></div></div>
+    <div>${calRail(monthPrefix,MF,m,y)}</div></div>`;
+}
+/* Calendar context rail — the schedule as a list, plus this month's
+   gate mix. Both read straight from rels[].plan / rels[].cur. */
+function calRail(monthPrefix,MF,m,y){
+  const upcoming=rels.filter(r=>r.plan&&r.cur!=='done')
+    .sort((a,b)=>a.plan.localeCompare(b.plan)).slice(0,6);
+  const inMonth=rels.filter(r=>r.plan&&r.plan.startsWith(monthPrefix));
+  const gateColor={uat:'var(--wait)',prod:'var(--navy)',done:'var(--go)'};
+  const mix=countBy(inMonth,r=>SL(r.cur)).map(([label,count])=>{
+    const rel=inMonth.find(r=>SL(r.cur)===label);
+    return {label,val:count,color:gateColor[rel.cur]||'var(--teal)',
+      pct:Math.round(count/inMonth.length*100)};
+  });
+  const list=upcoming.length?upcoming.map(r=>`<div class="srow">
+      <span class="sw" style="background:${gateColor[r.cur]||'var(--teal)'}"></span>
+      <span class="lbl">${E(r.nm)}</span>
+      <span class="sub">${fdShort(r.plan)}</span></div>`).join('')
+    :`<p style="color:var(--mut);font-size:12.5px">No releases have a planned date.</p>`;
+  return panel('Next up',list,upcoming.length?`${upcoming.length} shown`:'')
+   + panel(`${MF[m]} by gate`, statRows(mix,'Nothing scheduled this month.'));
 }
 
 /* ═══ change activity ═══════════════════ */
@@ -1992,17 +2137,36 @@ function vChg(){
     unack?{label:`${unack} awaiting acknowledgement`,tone:'wait'}:{label:'All acknowledged',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
-  <div class="c"><div class="b flush"><div class="feed">${acts.length?
-    acts.map(v=>{
-      const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
-      const hot=others.includes(me)&&!v.ack.includes(me);
-      return `<div class="fi"><div class="dot ${hot?'stop':'go'}"></div><div class="fc">
-        <div class="ft">${E(U(v.by).nm)} ${E(v.act.toLowerCase())} on ${E(C(v.comp).nm)}${hot?` <span class="stt s-bad" style="margin-left:4px"><i></i>Needs ack</span>`:''}</div>
-        <div class="fm">Notified: ${others.map(o=>E(U(o).nm)).join(', ')||'none'} · Acknowledged: ${v.ack.length?v.ack.map(o=>E(U(o).nm)).join(', '):'no one yet'}</div>
-      </div><div class="fw">${fdRel(v.on)}</div>${hot?`<button class="bt s" style="margin-left:10px" onclick="ack('${v.id}')">Acknowledge</button>`:''}</div>`;
-    }).join('')
-    :'<div class="ept"><h4>No change activity yet</h4><p>Pulls and applied changes will be logged here.</p></div>'}
-  </div></div></div>`;
+  <div class="cols">
+    <div class="c"><div class="b flush"><div class="feed">${acts.length?
+      acts.map(v=>{
+        const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
+        const hot=others.includes(me)&&!v.ack.includes(me);
+        return `<div class="fi"><div class="dot ${hot?'stop':'go'}"></div><div class="fc">
+          <div class="ft">${E(U(v.by).nm)} ${E(v.act.toLowerCase())} on ${E(C(v.comp).nm)}${hot?` <span class="stt s-bad" style="margin-left:4px"><i></i>Needs ack</span>`:''}</div>
+          <div class="fm">Notified: ${others.map(o=>E(U(o).nm)).join(', ')||'none'} · Acknowledged: ${v.ack.length?v.ack.map(o=>E(U(o).nm)).join(', '):'no one yet'}</div>
+        </div><div class="fw">${fdRel(v.on)}</div>${hot?`<button class="bt s" style="margin-left:10px" onclick="ack('${v.id}')">Acknowledge</button>`:''}</div>`;
+      }).join('')
+      :chartEmpty('🔔','No change activity yet','Pulls and applied changes will be logged here.')}
+    </div></div></div>
+    <div>${chgRail()}</div>
+  </div>`;
+}
+/* Change-activity rail: which components see the most churn, and who is
+   driving it. Both counted straight from acts[]. */
+function chgRail(){
+  const byComp=countBy(acts,v=>C(v.comp).nm)
+    .map(([label,count])=>({label,val:count,color:'var(--teal)',pct:Math.round(count/acts.length*100)}));
+  const byPerson=countBy(acts,v=>U(v.by).nm)
+    .map(([label,count])=>({label,val:count,color:'var(--navy)'}));
+  const pending=acts.filter(v=>C(v.comp).owners.some(o=>o!==v.by&&U(o).active&&!v.ack.includes(o))).length;
+  const ackRows=[
+    {label:'Fully acknowledged',val:acts.length-pending,color:'var(--go)'},
+    {label:'Still waiting',val:pending,color:pending?'var(--wait)':'var(--mut2)'},
+  ];
+  return panel('Acknowledgement',statRows(ackRows))
+   + panel('Busiest components',statRows(byComp,'No components have activity yet.'))
+   + panel('Who changed things',statRows(byPerson,'No contributors yet.'));
 }
 
 /* ═══ compose email ═════════════════════ */
@@ -2010,19 +2174,38 @@ function vMail(){
   return head('mail')+`
   ${!emailConfigured?`<div class="sec"><div class="mt w">Email sending is not configured on the server yet. Set <b>RELAY_SMTP_USER</b> (a Gmail address) and <b>RELAY_SMTP_PASS</b> (its Gmail App Password) as environment variables on the server, then restart it.</div></div>`
     :`<div class="sec"><div class="mt">Sending as ${E(emailFrom)}.</div></div>`}
-  <div class="c" style="max-width:760px"><div class="b">
-    <div class="fg" style="margin-bottom:16px">
-      <div><label>To</label><input id="mt" placeholder="name@gmail.com, other@gmail.com"></div>
-      <div><label>Or pick a user</label><select id="mtu" onchange="if(this.value)document.getElementById('mt').value=U(this.value).em">
-        <option value="">— choose —</option>
-        ${users.map(u=>`<option value="${u.id}">${E(u.nm)} (${E(u.em)})</option>`).join('')}
-      </select></div>
-    </div>
-    <div style="margin-bottom:16px"><label>Subject</label><input id="ms" placeholder="Subject"></div>
-    <div style="margin-bottom:8px"><label>Message</label><textarea id="mb" rows="8" placeholder="Type your message"></textarea></div>
-    <div class="er" id="e-mail">Enter at least one recipient, a subject and a message.</div>
-    <button class="bt p" id="mSend" style="margin-top:8px" ${emailConfigured?'':'disabled'} onclick="sendManual()">Send email</button>
-  </div></div>`;
+  <div class="cols">
+    <div class="c"><div class="b">
+      <div class="fg" style="margin-bottom:16px">
+        <div><label>To</label><input id="mt" placeholder="name@gmail.com, other@gmail.com"></div>
+        <div><label>Or pick a user</label><select id="mtu" onchange="if(this.value)document.getElementById('mt').value=U(this.value).em">
+          <option value="">— choose —</option>
+          ${users.map(u=>`<option value="${u.id}">${E(u.nm)} (${E(u.em)})</option>`).join('')}
+        </select></div>
+      </div>
+      <div style="margin-bottom:16px"><label>Subject</label><input id="ms" placeholder="Subject"></div>
+      <div style="margin-bottom:8px"><label>Message</label><textarea id="mb" rows="10" placeholder="Type your message"></textarea></div>
+      <div class="er" id="e-mail">Enter at least one recipient, a subject and a message.</div>
+      <button class="bt p" id="mSend" style="margin-top:8px" ${emailConfigured?'':'disabled'} onclick="sendManual()">Send email</button>
+    </div></div>
+    <div>${mailRail()}</div>
+  </div>`;
+}
+/* Compose rail: the real address book and what was actually sent last,
+   so the composer has useful context beside it. */
+function mailRail(){
+  const active=users.filter(u=>u.active);
+  const recent=notifs.slice(0,5);
+  const book=active.slice(0,8).map(u=>`<div class="srow">
+    <span class="lbl">${E(u.nm)}</span>
+    <button class="lk" style="font-size:12px" onclick="document.getElementById('mt').value='${E(u.em)}'">Use</button></div>`).join('');
+  const sent=recent.length?recent.map(n=>`<div class="srow">
+      <span class="sw" style="background:${n.ok?'var(--go)':'var(--stop)'}"></span>
+      <span class="lbl">${E(n.sub)}</span>
+      <span class="sub">${fdRel(n.on)}</span></div>`).join('')
+    :`<p style="color:var(--mut);font-size:12.5px">Nothing sent yet.</p>`;
+  return panel('Address book',book||`<p style="color:var(--mut);font-size:12.5px">No active users.</p>`,`${active.length} active`)
+   + panel('Recently sent',sent);
 }
 async function sendManual(){
   const to=document.getElementById('mt').value.split(',').map(s=>s.trim()).filter(Boolean);
@@ -2046,12 +2229,33 @@ function vNote(){
     {label:`${okCount} sent`,tone:'go'},
     ...(badCount?[{label:`${badCount} retried`,tone:'stop'}]:[])
   ])+`
-  <div class="c"><div class="b flush"><div class="feed">${notifs.length?
-    notifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
-      <div class="ft">${E(n.sub)} <span class="tag" style="margin-left:4px">${E(n.ty)}</span></div>
-      <div class="fm">To ${n.to.length} recipient${n.to.length!==1?'s':''}: ${n.to.map(t=>E(U(t).em)).join(', ')} ${n.ok?'<span class="stt s-ok" style="margin-left:4px"><i></i>Sent</span>':'<span class="stt s-bad" style="margin-left:4px"><i></i>Retried</span>'}</div>
-    </div><div class="fw">${fdRel(n.on)}</div></div>`).join('')
-    :'<div class="ept"><h4>No notifications yet</h4><p>Every message the application sends will show up here.</p></div>'}</div></div></div>`;
+  <div class="cols">
+    <div class="c"><div class="b flush"><div class="feed">${notifs.length?
+      notifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
+        <div class="ft">${E(n.sub)} <span class="tag" style="margin-left:4px">${E(n.ty)}</span></div>
+        <div class="fm">To ${n.to.length} recipient${n.to.length!==1?'s':''}: ${n.to.map(t=>E(U(t).em)).join(', ')} ${n.ok?'<span class="stt s-ok" style="margin-left:4px"><i></i>Sent</span>':'<span class="stt s-bad" style="margin-left:4px"><i></i>Retried</span>'}</div>
+      </div><div class="fw">${fdRel(n.on)}</div></div>`).join('')
+      :chartEmpty('📨','No notifications yet','Every message the application sends will show up here.')}
+    </div></div></div>
+    <div>${noteRail()}</div>
+  </div>`;
+}
+/* Notification rail: message mix, delivery outcome, and who actually
+   receives mail — all counted from notifs[]. */
+function noteRail(){
+  const typeColors=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
+  const byType=countBy(notifs,n=>n.ty).map(([label,count],i)=>({label,val:count,
+    color:typeColors[i%typeColors.length],pct:Math.round(count/notifs.length*100)}));
+  const okCount=notifs.filter(n=>n.ok).length;
+  const delivery=[
+    {label:'Sent',val:okCount,color:'var(--go)'},
+    {label:'Retried',val:notifs.length-okCount,color:notifs.length-okCount?'var(--stop)':'var(--mut2)'},
+  ];
+  const recips=countBy(notifs.flatMap(n=>n.to),id=>U(id).nm).slice(0,6)
+    .map(([label,count])=>({label,val:count,color:'var(--teal)'}));
+  return panel('Delivery',statRows(delivery))
+   + panel('Message types',statRows(byType,'No messages logged yet.'))
+   + panel('Most contacted',statRows(recips,'No recipients yet.'));
 }
 
 /* ═══ audit ═════════════════════════════ */
@@ -2063,12 +2267,33 @@ function vAud(){
     {label:'Append-only',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
-  <div class="c"><div class="b flush"><div class="feed">${audit.length?
-    audit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
-      <div class="ft">${E(U(a.ac).nm)} — ${E(a.act)}${a.rel?` <span class="tag" style="margin-left:4px">${E(R(a.rel).ref)}</span>`:''}</div>
-      <div class="fm">${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'')}${a.prev!=='—'?` · ${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`:''}${a.rs?` · <span style="color:var(--stop)">${E(a.rs)}</span>`:''}</div>
-    </div><div class="fw">${fdRel(a.on)}</div></div>`).join('')
-    :'<div class="ept"><h4>No audit entries yet</h4><p>Every action taken in the application will be recorded here.</p></div>'}</div></div></div>`;
+  <div class="cols">
+    <div class="c"><div class="b flush"><div class="feed">${audit.length?
+      audit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
+        <div class="ft">${E(U(a.ac).nm)} — ${E(a.act)}${a.rel?` <span class="tag" style="margin-left:4px">${E(R(a.rel).ref)}</span>`:''}</div>
+        <div class="fm">${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'')}${a.prev!=='—'?` · ${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`:''}${a.rs?` · <span style="color:var(--stop)">${E(a.rs)}</span>`:''}</div>
+      </div><div class="fw">${fdRel(a.on)}</div></div>`).join('')
+      :chartEmpty('📋','No audit entries yet','Every action taken in the application will be recorded here.')}
+    </div></div></div>
+    <div>${audRail()}</div>
+  </div>`;
+}
+/* Audit rail: who is acting and how recently, from audit[] only. */
+function audRail(){
+  const byActor=countBy(audit,a=>U(a.ac).nm).slice(0,8)
+    .map(([label,count])=>({label,val:count,color:'var(--navy)',
+      pct:Math.round(count/Math.max(1,audit.length)*100)}));
+  const withReason=audit.filter(a=>a.rs).length;
+  const transitions=audit.filter(a=>a.prev&&a.prev!=='—').length;
+  const shape=[
+    {label:'State transitions',val:transitions,color:'var(--teal)'},
+    {label:'With a stated reason',val:withReason,color:withReason?'var(--wait)':'var(--mut2)'},
+    {label:'Other actions',val:audit.length-transitions,color:'var(--mut2)'},
+  ];
+  const newest=audit.length?audit[0].on:null;
+  return panel('Most active',statRows(byActor,'No audit entries yet.'),
+      newest?`latest ${ageLabel(newest)}`:'')
+   + panel('Entry types',statRows(shape));
 }
 
 /* ═══ admin ═════════════════════════════ */
@@ -2093,7 +2318,17 @@ function vUsr(){
         <button class="bt s d" onclick="mDelUser('${u.id}')">Delete</button>
       </td>
     </tr>`).join('')}</tbody></table></div>`
-    :'<div class="ept"><h4>No users yet</h4><p>Add a user to start routing approvals and alerts.</p></div>'}</div></div>`;
+    :chartEmpty('👤','No users yet','Add a user to start routing approvals and alerts.')}</div></div>
+  ${users.length?`<div class="sec g2" style="margin-top:22px">
+    ${panel('Directory by role',statRows(countBy(users,u=>u.role).map(([label,count],i)=>
+      ({label,val:count,color:['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)'][i%5],
+        pct:Math.round(count/users.length*100)})))) }
+    ${panel('Component coverage',statRows(comps.map(c=>{
+      const owners=users.filter(u=>u.comp.includes(c.id)&&u.active).length;
+      return {label:c.nm,val:owners,sub:owners?'':'unowned',
+        color:owners?'var(--go)':'var(--stop)'};
+    }),'No components defined.'))}
+  </div>`:''}`;
 }
 function vGrp(){
   if(!groups.length)return head('grp')+`<div class="c"><div class="ept"><h4>No approval groups yet</h4><p>Approval groups decide who signs off at each gate.</p></div></div>`;
