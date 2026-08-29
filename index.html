@@ -129,10 +129,28 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 }
 
 /* ── page head ─────────────────────────── */
-.ph{margin-bottom:28px}
-.ph h1{font-size:30px;font-weight:700;letter-spacing:-.035em;line-height:1.12}
-.ph p{color:var(--mut);font-size:14.5px;margin-top:6px;max-width:64ch}
-.ph .acts{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+/* Shared page header band. Every page gets the same anchored header
+   surface (the dashboard uses the richer .hero variant below), so a
+   title is never bare text floating on the page background. */
+.ph{margin-bottom:22px;position:relative;overflow:hidden;border-radius:14px;
+  padding:22px 26px;border:1px solid var(--line);box-shadow:var(--sh);
+  background:linear-gradient(118deg,var(--card) 0%,var(--card) 42%,var(--navy-bg) 100%);
+  display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap}
+.ph::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+  background:linear-gradient(180deg,var(--navy),var(--teal))}
+.ph .phl{flex:1;min-width:260px}
+.ph h1{font-size:27px;font-weight:700;letter-spacing:-.032em;line-height:1.14}
+.ph p{color:var(--mut);font-size:14px;margin-top:5px;max-width:64ch}
+.ph .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ph .phchips{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+/* Header stat chip — real derived counts, never filler. */
+.phchip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;
+  color:var(--ink2);background:var(--card);border:1px solid var(--line2);
+  border-radius:20px;padding:4px 12px}
+.phchip i{width:7px;height:7px;border-radius:50%;background:var(--navy);flex:none}
+.phchip.go i{background:var(--go)}.phchip.wait i{background:var(--wait)}
+.phchip.stop i{background:var(--stop)}.phchip.teal i{background:var(--teal)}
+@media(max-width:920px){.ph{padding:18px 18px;border-radius:12px}.ph h1{font-size:23px}}
 
 /* ── dashboard hero band ────────────────────
    A deep navy→teal gradient panel anchoring the landing page, with the
@@ -226,6 +244,12 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .legend .lbl{flex:1;color:var(--ink2)}
 .legend .val{font-family:var(--d);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
 .hbars{display:flex;flex-direction:column;gap:12px;height:100%;min-height:150px;justify-content:center}
+/* Compact stacked bar — proportional segments for a small breakdown. */
+.stack{display:flex;height:8px;border-radius:5px;overflow:hidden;background:var(--sunk);gap:2px}
+.stack span{display:block;min-width:3px}
+.stack-key{display:flex;flex-wrap:wrap;gap:10px;margin-top:9px;font-size:11.5px;color:var(--mut)}
+.stack-key b{display:inline-flex;align-items:center;gap:5px;font-weight:500;color:var(--ink2)}
+.stack-key i{width:8px;height:8px;border-radius:2px;flex:none}
 .hbar-top{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}
 .hbar-row .top .lbl{color:var(--ink2)}
 .hbar-row .top .val{font-family:var(--d);color:var(--mut);font-variant-numeric:tabular-nums}
@@ -919,12 +943,20 @@ function draw(){
   v.innerHTML=({dash:vDash,mine:vMine,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
     aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
 }
-const head=(k,extra='')=>{const[t,d]=TITLES[k];
-  return `<div class="ph"><h1>${t}</h1>${d?`<p>${d}</p>`:''}${extra?`<div class="acts">${extra}</div>`:''}</div>`};
+/* chips: optional array of {label, tone} built from REAL derived counts —
+   rendered on the left under the subtitle; extra: action buttons, right. */
+const head=(k,extra='',chips=[])=>{const[t,d]=TITLES[k];
+  return `<div class="ph">
+    <div class="phl"><h1>${t}</h1>${d?`<p>${d}</p>`:''}
+      ${chips.length?`<div class="phchips">${chips.map(c=>
+        `<span class="phchip ${c.tone||''}"><i></i>${E(c.label)}</span>`).join('')}</div>`:''}
+    </div>
+    ${extra?`<div class="acts">${extra}</div>`:''}
+  </div>`};
 
 function vRO(reason){
-  return `<div class="ph"><h1>Limited access</h1>
-    <p>${E(reason||"You don't have permission to see this page.")} Ask an Admin to grant you access under User accounts.</p></div>
+  return `<div class="ph"><div class="phl"><h1>Limited access</h1>
+    <p>${E(reason||"You don't have permission to see this page.")} Ask an Admin to grant you access under User accounts.</p></div></div>
   <div class="c"><div class="b"><div class="kv">
     <div class="k">Signed in as</div><div>${E(authUser?.name||'—')}</div>
     <div class="k">Username</div><div class="mono" style="font-size:12.5px">${E(authUser?.username||'—')}</div>
@@ -1010,10 +1042,10 @@ function vAccts(){
   const relTeamCount=accounts.filter(a=>!a.is_admin&&roleForAccount(a)==='Release Team').length;
   const devCount=accounts.filter(a=>!a.is_admin&&roleForAccount(a)==='Developer').length;
   const summary=accountsLoaded&&accounts.length?`<div class="sec"><div class="kpis">
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Active Users</div><div class="n">${activeCount}</div></div><div class="ic go">✓</div></div><div class="h">of ${accounts.length} total accounts</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Developers</div><div class="n">${devCount}</div></div><div class="ic teal">👥</div></div><div class="h">view-only access</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Release Team</div><div class="n">${relTeamCount}</div></div><div class="ic">📦</div></div><div class="h">can edit releases &amp; conflicts</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Admins</div><div class="n">${adminCount}</div></div><div class="ic wait">🔑</div></div><div class="h">full access</div></div>
+    <div class="kpi a-go"><div class="kpi-top"><div><div class="l">Active Users</div><div class="n">${activeCount}</div></div><div class="ic go">✓</div></div><div class="h">of ${accounts.length} total accounts</div></div>
+    <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">Developers</div><div class="n">${devCount}</div></div><div class="ic teal">👥</div></div><div class="h">view-only access</div></div>
+    <div class="kpi a-info"><div class="kpi-top"><div><div class="l">Release Team</div><div class="n">${relTeamCount}</div></div><div class="ic">📦</div></div><div class="h">can edit releases &amp; conflicts</div></div>
+    <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Admins</div><div class="n">${adminCount}</div></div><div class="ic wait">🔑</div></div><div class="h">full access</div></div>
   </div></div>`:'';
   return head('accts',`<button class="bt p" onclick="mNewAccount()">+ Add user</button>`)+summary+`
   <div class="c"><div class="b flush"><div class="tw"><table>
@@ -1325,10 +1357,10 @@ function vMine(){
   const moveCount=p.filter(x=>x.k==='move').length;
   const awaitCount=p.filter(x=>x.k==='await').length;
   return head('mine')+`<div class="sec"><div class="kpis">
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Needs You</div><div class="n">${p.length}</div></div><div class="ic">⏳</div></div><div class="h">total items</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Critical</div><div class="n ${critCount?'s':''}">${critCount}</div></div><div class="ic stop">🚨</div></div><div class="h">${critCount?`<span class="trend stop">changes to acknowledge</span>`:`<span class="trend go">None</span>`}</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Action Needed</div><div class="n ${moveCount?'w':''}">${moveCount}</div></div><div class="ic wait">➡</div></div><div class="h">${moveCount?`<span class="trend wait">ready to advance</span>`:`<span class="trend go">None</span>`}</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Waiting on Others</div><div class="n">${awaitCount}</div></div><div class="ic teal">👥</div></div><div class="h">approvals in flight</div></div>
+    <div class="kpi a-info"><div class="kpi-top"><div><div class="l">Needs You</div><div class="n">${p.length}</div></div><div class="ic">⏳</div></div><div class="h">total items</div></div>
+    <div class="kpi a-stop"><div class="kpi-top"><div><div class="l">Critical</div><div class="n ${critCount?'s':''}">${critCount}</div></div><div class="ic stop">🚨</div></div><div class="h">${critCount?`<span class="trend stop">changes to acknowledge</span>`:`<span class="trend go">None</span>`}</div></div>
+    <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Action Needed</div><div class="n ${moveCount?'w':''}">${moveCount}</div></div><div class="ic wait">➡</div></div><div class="h">${moveCount?`<span class="trend wait">ready to advance</span>`:`<span class="trend go">None</span>`}</div></div>
+    <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">Waiting on Others</div><div class="n">${awaitCount}</div></div><div class="ic teal">👥</div></div><div class="h">approvals in flight</div></div>
   </div></div>
   <div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
   ${sorted.map(x=>{
@@ -1415,8 +1447,13 @@ function vReleaseGrid(){
   const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(showActionCol?170:0);
   const tabs=`<div class="seg" style="margin-top:16px">${RELEASE_CATEGORIES.map(c=>
     `<button class="${c.key===catKey?'on':''}" onclick="setReleaseTab('${c.key}')">${c.ic} ${E(c.nav)}</button>`).join('')}</div>`;
+  const liveCount=rels.filter(r=>r.cur==='done').length;
   return head('relmgmt',(canCreateHere?`<button class="bt p" onclick="mNewRow()">New release</button>`:'')+
-    `<button class="bt" onclick="exportReleaseGridCsv('${catKey}')">Export</button>`)+
+    `<button class="bt" onclick="exportReleaseGridCsv('${catKey}')">Export</button>`,[
+      {label:`${rels.length} release${rels.length!==1?'s':''}`},
+      {label:`${rels.length-liveCount} in flight`,tone:'teal'},
+      {label:`${liveCount} released`,tone:'go'}
+    ])+
     tabs+
     (!cat.editable?`<div class="sec"><div class="mt">Read-only view — same release data as My Team Release. Switch to the My Team Release tab to edit.</div></div>`:'')+`
   <div class="sec c"><div class="b">
@@ -1510,9 +1547,11 @@ function vRel(){
   const apl=appsFor(r.id);
 
   return `<div class="ph">
-    <button class="lk" style="margin-bottom:12px" onclick="go('relmgmt')">← Release Management</button>
-    <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()}</div>
-    <h1>${E(r.nm)}</h1><p>${E(r.desc)}</p>
+    <div class="phl">
+      <button class="lk" style="margin-bottom:12px" onclick="go('relmgmt')">← Release Management</button>
+      <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()}</div>
+      <h1>${E(r.nm)}</h1><p>${E(r.desc)}</p>
+    </div>
     ${acts_?`<div class="acts">${acts_}</div>`:''}
   </div>
 
@@ -1707,10 +1746,10 @@ function vConflicts(){
 
   const summaryCards=`<div class="sec"><div class="kpis">
     <div class="kpi"><div class="kpi-top"><div><div class="l">Total Rows</div><div class="n">${projectRows.length}</div></div><div class="ic">📊</div></div><div class="h">in ${E(conflictProject)}</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Completed</div><div class="n">${completedCount}</div></div><div class="ic go">✓</div></div><div class="h">reached Prod</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">In Progress</div><div class="n">${inProgressCount}</div></div><div class="ic teal">⏳</div></div><div class="h">started, not yet live</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Pending</div><div class="n">${pendingCount}</div></div><div class="ic wait">⏱</div></div><div class="h">no milestones started</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Upcoming Milestones</div><div class="n">${upcomingCount}</div></div><div class="ic">📅</div></div><div class="h">due in the next 30 days</div></div>
+    <div class="kpi a-go"><div class="kpi-top"><div><div class="l">Completed</div><div class="n">${completedCount}</div></div><div class="ic go">✓</div></div><div class="h">reached Prod</div></div>
+    <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">In Progress</div><div class="n">${inProgressCount}</div></div><div class="ic teal">⏳</div></div><div class="h">started, not yet live</div></div>
+    <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Pending</div><div class="n">${pendingCount}</div></div><div class="ic wait">⏱</div></div><div class="h">no milestones started</div></div>
+    <div class="kpi a-info"><div class="kpi-top"><div><div class="l">Upcoming Milestones</div><div class="n">${upcomingCount}</div></div><div class="ic">📅</div></div><div class="h">due in the next 30 days</div></div>
   </div></div>`;
 
   const milestoneBars=CF_MILESTONE_FIELDS.map(f=>[f.h,projectRows.filter(c=>c[f.key]).length]);
@@ -1803,7 +1842,10 @@ function vConflicts(){
 
   if(showEmptyState){
     return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
-      `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+
+      `<button class="bt" onclick="exportConflictsCsv()">Export</button>`,[
+        {label:`${conflicts.length} row${conflicts.length!==1?'s':''} across all projects`},
+        {label:`${PROJECT_NAMES.length} project tabs`,tone:'teal'}
+      ])+
       projTabs+`<div class="sec"><div class="c"><div class="ept" style="padding:64px 24px">
         <h4>No tracker records yet</h4>
         <p>Add your first tracker row or import your Project Tracker Excel data to see project insights.</p>
@@ -1811,8 +1853,12 @@ function vConflicts(){
       </div></div></div>`;
   }
 
+  const projectsWithRows=new Set(conflicts.map(c=>c.project)).size;
   return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
-    `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+
+    `<button class="bt" onclick="exportConflictsCsv()">Export</button>`,[
+      {label:`${conflicts.length} row${conflicts.length!==1?'s':''} across all projects`},
+      {label:`${projectsWithRows} of ${PROJECT_NAMES.length} project${PROJECT_NAMES.length!==1?'s':''} populated`,tone:'teal'}
+    ])+
     projTabs+(hasRows?summaryCards+charts:'')+filterToolbar+`<div class="sec">${gridCard}</div>`+upcomingPanel;
 }
 /* ═══ Excel-style inline row editing ═══════
@@ -1894,7 +1940,13 @@ function vCal(){
   const key=d=>`${y}-${P2(m+1)}-${P2(d)}`;
   const today=new Date(),todayKey=`${today.getFullYear()}-${P2(today.getMonth()+1)}-${P2(today.getDate())}`;
   const MF=['January','February','March','April','May','June','July','August','September','October','November','December'];
-  return head('cal')+`<div class="c"><div class="h"><h3>${MF[m]} ${y}</h3>
+  const monthPrefix=`${y}-${P2(m+1)}`;
+  const thisMonth=rels.filter(r=>r.plan&&r.plan.startsWith(monthPrefix)).length;
+  const allPlanned=rels.filter(r=>r.plan&&r.cur!=='done').length;
+  return head('cal','',[
+    {label:`${thisMonth} in ${MF[m]} ${y}`,tone:'teal'},
+    {label:`${allPlanned} upcoming overall`}
+  ])+`<div class="c"><div class="h"><h3>${MF[m]} ${y}</h3>
     <div class="r"><button class="bt s" onclick="calMonth=new Date(${y},${m-1},1);draw()">←</button>
     <button class="bt s" onclick="calMonth=new Date();draw()">Today</button>
     <button class="bt s" onclick="calMonth=new Date(${y},${m+1},1);draw()">→</button></div></div>
@@ -1919,7 +1971,11 @@ function vCal(){
 
 /* ═══ change activity ═══════════════════ */
 function vChg(){
-  return head('chg',canEdit()?`<button class="bt p" onclick="mPull()">Record a pull</button>`:'')+`
+  const unack=acts.filter(v=>C(v.comp).owners.some(o=>o!==v.by&&U(o).active&&!v.ack.includes(o))).length;
+  return head('chg',canEdit()?`<button class="bt p" onclick="mPull()">Record a pull</button>`:'',[
+    {label:`${acts.length} change event${acts.length!==1?'s':''} logged`},
+    unack?{label:`${unack} awaiting acknowledgement`,tone:'wait'}:{label:'All acknowledged',tone:'go'}
+  ])+`
   <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
   <div class="c"><div class="b flush"><div class="feed">${acts.length?
     acts.map(v=>{
@@ -1969,7 +2025,12 @@ async function sendManual(){
 
 /* ═══ notifications ═════════════════════ */
 function vNote(){
-  return head('note',`<button class="bt" onclick="runCycle()">Run reminder cycle</button>`)+`
+  const okCount=notifs.filter(n=>n.ok).length, badCount=notifs.length-okCount;
+  return head('note',`<button class="bt" onclick="runCycle()">Run reminder cycle</button>`,[
+    {label:`${notifs.length} message${notifs.length!==1?'s':''} logged`},
+    {label:`${okCount} sent`,tone:'go'},
+    ...(badCount?[{label:`${badCount} retried`,tone:'stop'}]:[])
+  ])+`
   <div class="c"><div class="b flush"><div class="feed">${notifs.length?
     notifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
       <div class="ft">${E(n.sub)} <span class="tag" style="margin-left:4px">${E(n.ty)}</span></div>
@@ -1980,7 +2041,12 @@ function vNote(){
 
 /* ═══ audit ═════════════════════════════ */
 function vAud(){
-  return head('aud',`<button class="bt" onclick="exportCsv()">Export</button>`)+`
+  const actors=new Set(audit.map(a=>a.ac)).size;
+  return head('aud',`<button class="bt" onclick="exportCsv()">Export</button>`,[
+    {label:`${audit.length} entr${audit.length!==1?'ies':'y'}`},
+    {label:`${actors} actor${actors!==1?'s':''}`,tone:'teal'},
+    {label:'Append-only',tone:'go'}
+  ])+`
   <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
   <div class="c"><div class="b flush"><div class="feed">${audit.length?
     audit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
@@ -1995,8 +2061,8 @@ function vUsr(){
   const activeCount=users.filter(u=>u.active).length;
   const summary=users.length?`<div class="sec"><div class="kpis">
     <div class="kpi"><div class="kpi-top"><div><div class="l">Total Users</div><div class="n">${users.length}</div></div><div class="ic">👤</div></div><div class="h">in the directory</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Active</div><div class="n">${activeCount}</div></div><div class="ic go">✓</div></div><div class="h">receiving alerts</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Inactive</div><div class="n">${users.length-activeCount}</div></div><div class="ic">⏸</div></div><div class="h">excluded from new mail</div></div>
+    <div class="kpi a-go"><div class="kpi-top"><div><div class="l">Active</div><div class="n">${activeCount}</div></div><div class="ic go">✓</div></div><div class="h">receiving alerts</div></div>
+    <div class="kpi a-stop"><div class="kpi-top"><div><div class="l">Inactive</div><div class="n">${users.length-activeCount}</div></div><div class="ic">⏸</div></div><div class="h">excluded from new mail</div></div>
   </div></div>`:'';
   return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`)+summary+`
   <div class="sec"><div class="mt">Inactive users are excluded from new approval and notification emails but remain visible in existing history.</div></div>
@@ -2016,7 +2082,13 @@ function vUsr(){
 }
 function vGrp(){
   if(!groups.length)return head('grp')+`<div class="c"><div class="ept"><h4>No approval groups yet</h4><p>Approval groups decide who signs off at each gate.</p></div></div>`;
-  return head('grp')+`<div class="sec"><div class="mt">${groups.length} approval group${groups.length!==1?'s':''} configured, one per gate.</div></div>
+  const gates=new Set(groups.map(g=>g.stage)).size;
+  const members=new Set(groups.flatMap(g=>g.members)).size;
+  return head('grp','',[
+    {label:`${groups.length} group${groups.length!==1?'s':''}`},
+    {label:`${gates} gate${gates!==1?'s':''} covered`,tone:'teal'},
+    {label:`${members} approver${members!==1?'s':''}`,tone:'go'}
+  ])+`
   <div class="cards-grid">
     ${groups.map(g=>`<div class="c"><div class="h"><h3>${E(g.nm)}</h3>
       <div class="r"><span class="tag">${SL(g.stage)}</span></div></div>
@@ -2034,19 +2106,39 @@ function vGrp(){
 }
 function vCmp(){
   if(!comps.length)return head('cmp')+`<div class="c"><div class="ept"><h4>No components yet</h4><p>Components group releases and drive who gets change alerts.</p></div></div>`;
-  return head('cmp')+`<div class="sec"><div class="mt">${comps.length} component${comps.length!==1?'s':''} tracked across ${rels.length} release${rels.length!==1?'s':''}.</div></div>
+  const owners=new Set(comps.flatMap(c=>c.owners)).size;
+  return head('cmp','',[
+    {label:`${comps.length} component${comps.length!==1?'s':''}`},
+    {label:`${rels.length} release${rels.length!==1?'s':''} tracked`,tone:'teal'},
+    {label:`${owners} owner${owners!==1?'s':''}`,tone:'go'}
+  ])+`
   <div class="cards-grid">
-    ${comps.map(c=>`<div class="c"><div class="h"><h3>${E(c.nm)}</h3>
-      <div class="r"><span class="tag">${rels.filter(r=>r.comp===c.id).length} release${rels.filter(r=>r.comp===c.id).length!==1?'s':''}</span></div></div>
+    ${comps.map(c=>{
+      const cr=rels.filter(r=>r.comp===c.id);
+      /* Real stage split for this component's releases — not filler. */
+      const buckets=[
+        {label:'In progress',count:cr.filter(r=>['groom','test','dev'].includes(r.cur)).length,color:'var(--info)'},
+        {label:'Approval',count:cr.filter(r=>r.cur==='uat').length,color:'var(--wait)'},
+        {label:'Production',count:cr.filter(r=>r.cur==='prod').length,color:'var(--teal)'},
+        {label:'Released',count:cr.filter(r=>r.cur==='done').length,color:'var(--go)'},
+      ];
+      const shown=buckets.filter(b=>b.count);
+      return `<div class="c"><div class="h"><h3>${E(c.nm)}</h3>
+      <div class="r"><span class="tag">${cr.length} release${cr.length!==1?'s':''}</span></div></div>
       <div class="b">
+        ${shown.length?`<div style="margin-bottom:16px">
+          <div class="stack">${shown.map(b=>`<span style="width:${b.count/cr.length*100}%;background:${b.color}"></span>`).join('')}</div>
+          <div class="stack-key">${shown.map(b=>`<b><i style="background:${b.color}"></i>${b.count} ${E(b.label.toLowerCase())}</b>`).join('')}</div>
+        </div>`:''}
         <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Change alerts go to the active owners below, excluding whoever made the change</div>
         <div class="chips">${c.owners.map(o=>`<span class="chip ${U(o).active?'':'off'}">
           <span class="n">${E(U(o).nm)}</span></span>`).join('')}</div>
-      </div></div>`).join('')}
+      </div></div>`;}).join('')}
   </div>`;
 }
 function vTpl(){
-  return head('tpl')+`
+  return head('tpl','',[{label:`${tmpl.length} template${tmpl.length!==1?'s':''}`},
+    {label:'Used for every automated message',tone:'teal'}])+`
   <div class="sec"><div class="mt">Fields in braces are replaced when a message is generated. Nothing beyond these fields is ever included in outbound email.</div></div>
   ${tmpl.map((t,i)=>`<div class="c sec" style="max-width:820px"><div class="h"><h3>${E(t.ev)}</h3></div><div class="b">
     <div style="margin-bottom:14px"><label>Subject</label><input value="${E(t.sub)}" oninput="tmpl[${i}].sub=this.value"></div>
