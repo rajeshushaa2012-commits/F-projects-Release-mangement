@@ -113,14 +113,10 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .seg button{border:0;background:transparent;font-family:var(--b);font-size:12.5px;font-weight:500;
   padding:5px 12px;border-radius:7px;color:var(--mut);cursor:pointer;transition:all .13s}
 .seg button.on{background:var(--teal);color:#fff}
-.body{padding:34px;flex:1;max-width:1600px;width:100%;display:flex;flex-direction:column}
-/* A page marks its primary region .fill so it grows to the window edge
-   instead of ending early and leaving raw page background below. The
-   list/table keeps its natural height; the card around it extends. */
-.fill{flex:1;min-height:0;display:flex;flex-direction:column}
-.fill>.b{flex:1}
-.sec.fill{display:flex;flex-direction:column}
-.sec.fill>.c{flex:1;display:flex;flex-direction:column}
+/* Content sizes to its own height. The body fills the window so the
+   background covers the viewport, but nothing inside is stretched to
+   fill leftover space — a short page ends right after its content. */
+.body{padding:34px 34px 40px;flex:1;max-width:1600px;width:100%}
 @media(max-width:920px){
   .shell{grid-template-columns:1fr}
   .rail{height:auto;position:static;flex-direction:row;align-items:center;gap:2px;overflow-x:auto;
@@ -239,7 +235,7 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
    Chart bodies fill their card and centre their content, so a card with
    only two bars doesn't leave dead space when its row-sibling is taller. */
 .chart-row{display:flex;gap:26px;align-items:center;flex-wrap:wrap;
-  height:100%;min-height:150px;justify-content:center}
+  height:100%;justify-content:center}
 .donut{width:132px;height:132px;border-radius:50%;flex:none;position:relative}
 .donut .hole{position:absolute;inset:20px;border-radius:50%;background:var(--card);
   display:flex;flex-direction:column;align-items:center;justify-content:center}
@@ -250,7 +246,7 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .legend .sw{width:10px;height:10px;border-radius:3px;flex:none}
 .legend .lbl{flex:1;color:var(--ink2)}
 .legend .val{font-family:var(--d);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
-.hbars{display:flex;flex-direction:column;gap:12px;height:100%;min-height:150px;justify-content:center}
+.hbars{display:flex;flex-direction:column;gap:12px;height:100%;justify-content:center}
 /* Compact stacked bar — proportional segments for a small breakdown. */
 .stack{display:flex;height:8px;border-radius:5px;overflow:hidden;background:var(--sunk);gap:2px}
 .stack span{display:block;min-width:3px}
@@ -271,18 +267,20 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .c{display:flex;flex-direction:column}
 .c>.b{padding:20px;flex:1}
 .c>.b.flush{padding:0}
-/* Empty state for a chart/insight card — fills whatever height the card
-   stretched to (instead of a short message floating at the top with a
-   dead gap below it) and gives it a themed icon rather than bare text. */
-.chart-empty{height:100%;min-height:150px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;text-align:center;gap:11px;padding:20px}
+/* Compact empty state for a chart/insight card. Centres within whatever
+   height the card already has (side-by-side cards match via .g2) but
+   never forces a tall blank rectangle on its own. */
+.chart-empty{height:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;gap:9px;padding:18px 20px}
 .chart-empty .ic{width:46px;height:46px;border-radius:13px;background:var(--sunk);
   color:var(--mut2);display:flex;align-items:center;justify-content:center;font-size:21px}
 .chart-empty h4{font-family:var(--d);font-size:14.5px;font-weight:600;color:var(--ink2)}
 .chart-empty p{font-size:12.5px;color:var(--mut);max-width:30ch;line-height:1.5}
 .sec{margin-bottom:22px}
 .grid{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;align-items:start}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:stretch}
+/* Paired cards keep their own content height — stretching the shorter one
+   to match its neighbour just moves the blank space inside a white card. */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
 @media(max-width:1040px){.grid,.g2{grid-template-columns:1fr}}
 
 /* ── buttons ───────────────────────────── */
@@ -434,7 +432,7 @@ tbody tr.editing select{padding-right:26px;background-position:right 8px center}
 .mt{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--info);border-radius:0 10px 10px 0;
   padding:13px 17px;font-size:13px;color:var(--ink2)}
 .mt.w{border-left-color:var(--wait)}
-.ept{padding:52px 24px;text-align:center}
+.ept{padding:34px 24px;text-align:center}
 .ept h4{font-family:var(--d);font-size:16px;font-weight:600;margin-bottom:5px}
 .ept p{font-size:13.5px;color:var(--mut);max-width:38ch;margin:0 auto}
 .kv{display:grid;grid-template-columns:118px 1fr;gap:11px 16px;font-size:13.5px;align-items:baseline}
@@ -446,10 +444,6 @@ tbody tr.editing select{padding-right:26px;background-position:right 8px center}
 .tl b{font-weight:600}
 .tl .rs{color:var(--stop);font-size:12.5px;margin-top:2px}
 .cal{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid var(--line);border-left:1px solid var(--line)}
-/* In a .fill card the month grid stretches, so week rows share the
-   available height the way a real calendar app lays them out. */
-.c.fill .b.flush{display:flex;flex-direction:column}
-.c.fill .cal{flex:1;grid-auto-rows:1fr}
 .cal .dh{padding:9px 6px;text-align:center;font-size:10.5px;font-weight:600;color:var(--mut2);
   text-transform:uppercase;letter-spacing:.08em;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--sunk)}
 .cal .dc{min-height:84px;padding:8px 9px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
@@ -473,12 +467,9 @@ tbody tr.editing select{padding-right:26px;background-position:right 8px center}
 .cal-legend .sw{width:9px;height:9px;border-radius:3px}
 
 /* ── card grid (config lists: approval groups, components) ── */
-.cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-items:start}
-/* Tiles in a row share a height so the grid reads as one band. Deliberately
-   NOT stretched to the full viewport — with only a handful of records that
-   spreads each card's content into voids, which looks worse than ending
-   the page honestly. */
-.fill>.cards-grid{align-items:stretch;grid-auto-rows:minmax(240px,auto);align-content:start}
+/* Tiles in a row share a height so the grid reads as one band, but the
+   row is only as tall as its tallest card's own content. */
+.cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-items:stretch}
 
 /* ── activity feed (timeline) ─────────────── */
 .feed{padding:4px 20px}
@@ -1064,7 +1055,7 @@ function vAccts(){
     <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Admins</div><div class="n">${adminCount}</div></div><div class="ic wait">🔑</div></div><div class="h">full access</div></div>
   </div></div>`:'';
   return head('accts',`<button class="bt p" onclick="mNewAccount()">+ Add user</button>`)+summary+`
-  <div class="c fill"><div class="b flush"><div class="tw"><table>
+  <div class="c"><div class="b flush"><div class="tw"><table>
     <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div></div></div>`;
 }
@@ -1378,7 +1369,7 @@ function vMine(){
     <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Action Needed</div><div class="n ${moveCount?'w':''}">${moveCount}</div></div><div class="ic wait">➡</div></div><div class="h">${moveCount?`<span class="trend wait">ready to advance</span>`:`<span class="trend go">None</span>`}</div></div>
     <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">Waiting on Others</div><div class="n">${awaitCount}</div></div><div class="ic teal">👥</div></div><div class="h">approvals in flight</div></div>
   </div></div>
-  <div class="c fill"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
+  <div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
   ${sorted.map(x=>{
     if(x.k==='await'){const pend=G(x.a.grp).members.filter(m=>!x.a.dec.some(d=>d.u===m));
       return `<div class="li"><div class="gr"><div class="t">Awaiting approval — ${E(x.r.nm)} <span class="tag" style="margin-left:6px">Waiting on others</span></div>
@@ -1862,8 +1853,8 @@ function vConflicts(){
         {label:`${conflicts.length} row${conflicts.length!==1?'s':''} across all projects`},
         {label:`${PROJECT_NAMES.length} project tabs`,tone:'teal'}
       ])+
-      projTabs+`<div class="sec fill"><div class="c"><div class="b" style="display:flex">
-        <div class="chart-empty" style="min-height:0">
+      projTabs+`<div class="sec"><div class="c"><div class="b">
+        <div class="chart-empty">
           <div class="ic">🗂</div>
           <h4>No tracker records yet</h4>
           <p>Add your first tracker row or import your Project Tracker Excel data to see project insights.</p>
@@ -1970,7 +1961,7 @@ function vCal(){
   return head('cal','',[
     {label:`${thisMonth} in ${MF[m]} ${y}`,tone:'teal'},
     {label:`${allPlanned} upcoming overall`}
-  ])+`<div class="c fill"><div class="h"><h3>${MF[m]} ${y}</h3>
+  ])+`<div class="c"><div class="h"><h3>${MF[m]} ${y}</h3>
     <div class="r"><button class="bt s" onclick="calMonth=new Date(${y},${m-1},1);draw()">←</button>
     <button class="bt s" onclick="calMonth=new Date();draw()">Today</button>
     <button class="bt s" onclick="calMonth=new Date(${y},${m+1},1);draw()">→</button></div></div>
@@ -2001,7 +1992,7 @@ function vChg(){
     unack?{label:`${unack} awaiting acknowledgement`,tone:'wait'}:{label:'All acknowledged',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
-  <div class="c fill"><div class="b flush"><div class="feed">${acts.length?
+  <div class="c"><div class="b flush"><div class="feed">${acts.length?
     acts.map(v=>{
       const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
       const hot=others.includes(me)&&!v.ack.includes(me);
@@ -2055,7 +2046,7 @@ function vNote(){
     {label:`${okCount} sent`,tone:'go'},
     ...(badCount?[{label:`${badCount} retried`,tone:'stop'}]:[])
   ])+`
-  <div class="c fill"><div class="b flush"><div class="feed">${notifs.length?
+  <div class="c"><div class="b flush"><div class="feed">${notifs.length?
     notifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
       <div class="ft">${E(n.sub)} <span class="tag" style="margin-left:4px">${E(n.ty)}</span></div>
       <div class="fm">To ${n.to.length} recipient${n.to.length!==1?'s':''}: ${n.to.map(t=>E(U(t).em)).join(', ')} ${n.ok?'<span class="stt s-ok" style="margin-left:4px"><i></i>Sent</span>':'<span class="stt s-bad" style="margin-left:4px"><i></i>Retried</span>'}</div>
@@ -2072,7 +2063,7 @@ function vAud(){
     {label:'Append-only',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
-  <div class="c fill"><div class="b flush"><div class="feed">${audit.length?
+  <div class="c"><div class="b flush"><div class="feed">${audit.length?
     audit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
       <div class="ft">${E(U(a.ac).nm)} — ${E(a.act)}${a.rel?` <span class="tag" style="margin-left:4px">${E(R(a.rel).ref)}</span>`:''}</div>
       <div class="fm">${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'')}${a.prev!=='—'?` · ${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`:''}${a.rs?` · <span style="color:var(--stop)">${E(a.rs)}</span>`:''}</div>
@@ -2090,7 +2081,7 @@ function vUsr(){
   </div></div>`:'';
   return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`)+summary+`
   <div class="sec"><div class="mt">Inactive users are excluded from new approval and notification emails but remain visible in existing history.</div></div>
-  <div class="c fill"><div class="b flush">${users.length?`<div class="tw"><table class="xgrid">
+  <div class="c"><div class="b flush">${users.length?`<div class="tw"><table class="xgrid">
     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Responsibility</th><th>Components</th><th>Status</th><th></th></tr></thead>
     <tbody>${users.map(u=>`<tr>
       <td class="tt">${E(u.nm)}</td><td class="mono" style="font-size:11.5px;color:var(--mut)">${E(u.em)}</td>
@@ -2113,7 +2104,7 @@ function vGrp(){
     {label:`${gates} gate${gates!==1?'s':''} covered`,tone:'teal'},
     {label:`${members} approver${members!==1?'s':''}`,tone:'go'}
   ])+`
-  <div class="sec fill"><div class="cards-grid">
+  <div class="cards-grid">
     ${groups.map(g=>{const openN=openApprovalsForGroup(g.id);return `<div class="c"><div class="h"><h3>${E(g.nm)}</h3>
       <div class="r"><span class="tag">${SL(g.stage)}</span></div></div>
       <div class="b">
@@ -2126,8 +2117,8 @@ function vGrp(){
             <option value="any" ${g.cond==='any'?'selected':''}>Any one approver</option>
             <option value="all" ${g.cond==='all'?'selected':''}>All approvers</option>
           </select></div>
-      </div></div>`;}).join('')}
-  </div></div>`;
+      </div>`;}).join('')}
+  </div>`;
 }
 function vCmp(){
   if(!comps.length)return head('cmp')+`<div class="c"><div class="ept"><h4>No components yet</h4><p>Components group releases and drive who gets change alerts.</p></div></div>`;
@@ -2137,7 +2128,7 @@ function vCmp(){
     {label:`${rels.length} release${rels.length!==1?'s':''} tracked`,tone:'teal'},
     {label:`${owners} owner${owners!==1?'s':''}`,tone:'go'}
   ])+`
-  <div class="sec fill"><div class="cards-grid">
+  <div class="cards-grid">
     ${comps.map(c=>{
       const cr=rels.filter(r=>r.comp===c.id);
       /* Real stage split for this component's releases — not filler. */
@@ -2158,8 +2149,8 @@ function vCmp(){
         <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Change alerts go to the active owners below, excluding whoever made the change</div>
         <div class="chips">${c.owners.map(o=>`<span class="chip ${U(o).active?'':'off'}">
           <span class="n">${E(U(o).nm)}</span></span>`).join('')}</div>
-      </div></div>`;}).join('')}
-  </div></div>`;
+      </div>`;}).join('')}
+  </div>`;
 }
 function vTpl(){
   return head('tpl','',[{label:`${tmpl.length} template${tmpl.length!==1?'s':''}`},
