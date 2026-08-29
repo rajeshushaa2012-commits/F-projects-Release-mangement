@@ -229,10 +229,22 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 
 /* ── kpi cards ─────────────────────────── */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+/* The card itself is NOT a click target — only the "View" action inside
+   it navigates. No cursor:pointer and no hover lift on the card, so it
+   never pretends to be a button. */
 .kpi{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;
   box-shadow:var(--sh);padding:16px 18px;display:flex;flex-direction:column;gap:10px;
-  overflow:hidden;transition:box-shadow .15s,transform .15s}
-.kpi:hover{box-shadow:var(--sh2);transform:translateY(-1px)}
+  overflow:hidden}
+/* Shared KPI action row: same position (bottom-right), styling and
+   behaviour on every KPI card in the app. margin-top:auto pins it to the
+   bottom so it lines up across cards of differing content height. */
+.kpi-act{margin-top:auto;padding-top:10px;border-top:1px solid var(--line);
+  display:flex;justify-content:flex-end}
+.kpi-link{background:none;border:0;font-family:var(--b);font-size:12.5px;font-weight:600;
+  color:var(--navy);cursor:pointer;padding:4px 8px;margin:-4px -8px;border-radius:7px;
+  display:inline-flex;align-items:center;gap:5px;transition:background .12s,color .12s}
+.kpi-link:hover{background:var(--navy-bg);color:var(--navy-dk)}
+.kpi-link:active{background:var(--navy-ln)}
 /* Semantic accent bar across the card top — ties each metric to its
    meaning (navy=neutral, teal=active, amber=waiting, green=shipped). */
 .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--navy)}
@@ -674,7 +686,27 @@ const CF_FIELDS=[
  {h:'KT to Support',key:'ktToSupport',w:130,type:'date'},
  {h:'Prod',key:'prod',w:120,type:'date'},
 ];
-let cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',sort:'default',page:1};
+let cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',progress:'all',sort:'default',page:1};
+/* Milestone-derived progress buckets, shared by the Conflict Tracker KPI
+   counts and the grid filter so a KPI's View action shows exactly the
+   rows it counted. Defined after CF_MILESTONE_FIELDS exists. */
+function cfProgressTest(k){
+  if(k==='completed')return c=>!!c.prod;
+  if(k==='pending')  return c=>!CF_MILESTONE_FIELDS.some(f=>c[f.key]);
+  if(k==='inprogress')return c=>!c.prod&&CF_MILESTONE_FIELDS.some(f=>c[f.key]);
+  if(k==='upcoming'){
+    const t=now().slice(0,10), in30=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+    return c=>CF_MILESTONE_FIELDS.some(f=>c[f.key]&&c[f.key]>=t&&c[f.key]<=in30);
+  }
+  return ()=>true;
+}
+const CF_PROGRESS=[
+  {k:'all',nm:'All rows'},{k:'completed',nm:'Completed (reached Prod)'},
+  {k:'inprogress',nm:'In progress'},{k:'pending',nm:'Pending (not started)'},
+  {k:'upcoming',nm:'Upcoming milestones (30d)'},
+];
+/* Entry point used by Conflict Tracker KPI actions. */
+function goCfProgress(k){cflt.progress=k;cflt.page=1;draw();window.scrollTo(0,0)}
 const CF_PAGE_SIZE=15;
 /* The 8 milestone-date columns, in workflow order — derived from CF_FIELDS
    rather than duplicated, so the insights panel can never drift out of
@@ -1091,10 +1123,23 @@ function roleForAccount(a){
   if(ROLE_PRESETS['Developer'].every(p=>perms.has(p))&&perms.size<=ROLE_PRESETS['Developer'].length)return'Developer';
   return'Custom';
 }
+/* Accounts KPIs filter the table below them in place. */
+let acctScope='all';
+function setAcctScope(k){acctScope=k;draw();window.scrollTo(0,0)}
+function acctScopeTest(k){
+  if(k==='active')return a=>a.active;
+  if(k==='Admin')return a=>a.is_admin;
+  if(k==='Release Team')return a=>!a.is_admin&&roleForAccount(a)==='Release Team';
+  if(k==='Developer')return a=>!a.is_admin&&roleForAccount(a)==='Developer';
+  return ()=>true;
+}
+const ACCT_SCOPE_LABEL={all:'',active:'Active users',Admin:'Admins',
+  'Release Team':'Release Team','Developer':'Developers'};
 function vAccts(){
+  const shown=accounts.filter(acctScopeTest(acctScope));
   const rows=!accountsLoaded
     ?`<tr><td colspan="6"><div class="ept"><h4>Loading accounts…</h4><p>Fetching the latest user list.</p></div></td></tr>`
-    :accounts.length?accounts.map(a=>`<tr>
+    :shown.length?shown.map(a=>`<tr>
       <td class="tt">${E(a.name)}</td>
       <td class="mono" style="font-size:11.5px">${E(a.username)}</td>
       <td class="mono" style="font-size:11.5px;color:var(--mut)">${E(a.email||'—')}</td>
@@ -1105,19 +1150,28 @@ function vAccts(){
         <button class="bt s" onclick="mResetAccountPassword(${a.id})">Reset password</button>
         <button class="bt s" onclick="toggleAccountActive(${a.id},${!a.active})">${a.active?'Deactivate':'Activate'}</button>
       </td>
-    </tr>`).join(''):`<tr><td colspan="6"><div class="ept"><h4>No user accounts yet</h4><p>Add a user to get started.</p></div></td></tr>`;
+    </tr>`).join(''):`<tr><td colspan="6">${accounts.length
+        ?chartEmpty('🔍','No accounts in this view','No accounts match this filter.')
+        :chartEmpty('🔑','No user accounts yet','Add a user to get started.')}</td></tr>`;
   const activeCount=accounts.filter(a=>a.active).length;
   const adminCount=accounts.filter(a=>a.is_admin).length;
   const relTeamCount=accounts.filter(a=>!a.is_admin&&roleForAccount(a)==='Release Team').length;
   const devCount=accounts.filter(a=>!a.is_admin&&roleForAccount(a)==='Developer').length;
   const summary=accountsLoaded&&accounts.length?`<div class="sec"><div class="kpis">
-    <div class="kpi a-go"><div class="kpi-top"><div><div class="l">Active Users</div><div class="n">${activeCount}</div></div><div class="ic go">✓</div></div><div class="h">of ${accounts.length} total accounts</div></div>
-    <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">Developers</div><div class="n">${devCount}</div></div><div class="ic teal">👥</div></div><div class="h">view-only access</div></div>
-    <div class="kpi a-info"><div class="kpi-top"><div><div class="l">Release Team</div><div class="n">${relTeamCount}</div></div><div class="ic">📦</div></div><div class="h">can edit releases &amp; conflicts</div></div>
-    <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Admins</div><div class="n">${adminCount}</div></div><div class="ic wait">🔑</div></div><div class="h">full access</div></div>
+    ${kpiCard({accent:'a-go',label:'Active Users',value:activeCount,icon:'✓',icCls:'go',
+      hint:`of ${accounts.length} total accounts`,
+      act:{label:'View active',on:"setAcctScope('active')"}})}
+    ${kpiCard({accent:'a-teal',label:'Developers',value:devCount,icon:'👥',icCls:'teal',hint:'view-only access',
+      act:{label:'View developers',on:"setAcctScope('Developer')"}})}
+    ${kpiCard({accent:'a-info',label:'Release Team',value:relTeamCount,icon:'📦',hint:'can edit releases &amp; conflicts',
+      act:{label:'View release team',on:"setAcctScope('Release Team')"}})}
+    ${kpiCard({accent:'a-wait',label:'Admins',value:adminCount,icon:'🔑',icCls:'wait',hint:'full access',
+      act:{label:'View admins',on:"setAcctScope('Admin')"}})}
   </div></div>`:'';
   return head('accts',`<button class="bt p" onclick="mNewAccount()">+ Add user</button>`)+summary+`
-  <div class="c sec"><div class="b flush"><div class="tw"><table class="xgrid">
+  <div class="c sec"><div class="h"><h3>${acctScope==='all'?'All accounts':E(ACCT_SCOPE_LABEL[acctScope])} · ${shown.length}</h3>
+    ${acctScope!=='all'?`<div class="r"><button class="lk" onclick="setAcctScope('all')">Clear filter</button></div>`:''}</div>
+    <div class="b flush"><div class="tw"><table class="xgrid">
     <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div></div></div>
   <div class="summary">${acctsRail()}</div>`;
@@ -1305,6 +1359,22 @@ function donutChart(segments,centerLabel){
 }
 /* Pure-CSS horizontal bar chart. rows: [[label,count]]. */
 /* Shared empty-state block for chart/insight cards — see .chart-empty. */
+/* ── KPI card ───────────────────────────────
+   Single builder for every KPI/summary card in the app, so the visual
+   and interaction pattern can't drift between pages. The card body is
+   inert; navigation lives only in the "View →" action, which is pinned
+   bottom-right. `act` is {label, on} where `on` is the click handler.  */
+function kpiCard(o){
+  return `<div class="kpi ${o.accent||''}">
+    <div class="kpi-top">
+      <div><div class="l">${E(o.label)}</div><div class="n ${o.nCls||''}">${o.value}</div></div>
+      ${o.icon?`<div class="ic ${o.icCls||''}">${o.icon}</div>`:''}
+    </div>
+    ${o.hint?`<div class="h">${o.hint}</div>`:''}
+    ${o.act?`<div class="kpi-act"><button class="kpi-link" onclick="${o.act.on}">${E(o.act.label||'View')} →</button></div>`:''}
+  </div>`;
+}
+
 /* Shared context-panel primitives. Every secondary panel in the app is
    built from these so pages don't each invent their own markup. */
 function panel(title,body,tagText){
@@ -1384,16 +1454,21 @@ function vDash(){
     </div>
   </div>
   <div class="sec hero-lift"><div class="kpis">
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Total Releases</div><div class="n">${totalRels}</div></div>
-      <div class="ic">📦</div></div><div class="h">across ${comps.length} components</div></div>
-    <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">Releases in Progress</div><div class="n">${inprog}</div></div>
-      <div class="ic teal">⏳</div></div><div class="h">not yet released ${att.length?`<span class="trend wait">${att.length} need attention</span>`:`<span class="trend go">On track</span>`}</div></div>
-    <div class="kpi a-info"><div class="kpi-top"><div><div class="l">Upcoming Releases</div><div class="n">${upcomingCount}</div></div>
-      <div class="ic">📅</div></div><div class="h">have a planned date</div></div>
-    <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Pending Approval</div><div class="n ${waiting?'w':''}">${waiting}</div></div>
-      <div class="ic wait">⚠</div></div><div class="h">${waiting?`<span class="trend wait">requests open</span>`:`<span class="trend go">None pending</span>`}</div></div>
-    <div class="kpi a-go"><div class="kpi-top"><div><div class="l">Scheduled for Production</div><div class="n">${scheduledForProd}</div></div>
-      <div class="ic go">🚀</div></div><div class="h">at that gate now</div></div>
+    ${kpiCard({label:'Total Releases',value:totalRels,icon:'📦',
+      hint:`across ${comps.length} components`,
+      act:{label:'View releases',on:"goReleases('all')"}})}
+    ${kpiCard({accent:'a-teal',label:'Releases in Progress',value:inprog,icon:'⏳',icCls:'teal',
+      hint:`not yet released ${att.length?`<span class="trend wait">${att.length} need attention</span>`:`<span class="trend go">On track</span>`}`,
+      act:{label:'View in progress',on:"goReleases('inprogress')"}})}
+    ${kpiCard({accent:'a-info',label:'Upcoming Releases',value:upcomingCount,icon:'📅',
+      hint:'have a planned date',
+      act:{label:'View upcoming',on:"goReleases('upcoming')"}})}
+    ${kpiCard({accent:'a-wait',label:'Pending Approval',value:waiting,nCls:waiting?'w':'',icon:'⚠',icCls:'wait',
+      hint:waiting?`<span class="trend wait">requests open</span>`:`<span class="trend go">None pending</span>`,
+      act:{label:'View pending',on:"goReleases('approval')"}})}
+    ${kpiCard({accent:'a-go',label:'Scheduled for Production',value:scheduledForProd,icon:'🚀',icCls:'go',
+      hint:'at that gate now',
+      act:{label:'View scheduled',on:"goReleases('prod')"}})}
   </div></div>`
   +(authUser&&authUser.must_change_password?`<div class="sec"><div class="mt w">
     You're signed in with a temporary password. <button class="lk" onclick="go('mypw')">Change it now</button>.</div></div>`:'')+helpCard()+`
@@ -1467,22 +1542,37 @@ function vDash(){
 
 /* ═══ my pending ════════════════════════ */
 const PEND_RANK={ack:0,move:1,await:2};
+/* Pending Actions' KPIs describe the list on this same page, so their
+   View action filters that list in place rather than navigating away. */
+let pendScope='all';
+function setPendScope(k){pendScope=k;draw();window.scrollTo(0,0)}
 function vMine(){
   const p=pendingForMe();
   if(!p.length)return head('mine')+`<div class="c"><div class="ept">
     <h4>Nothing waiting on you</h4><p>Approvals you have requested and change alerts on your components will appear here.</p></div></div>`;
-  const sorted=p.slice().sort((a,b)=>(PEND_RANK[a.k]??1)-(PEND_RANK[b.k]??1));
   const critCount=p.filter(x=>x.k==='ack').length;
   const moveCount=p.filter(x=>x.k==='move').length;
   const awaitCount=p.filter(x=>x.k==='await').length;
+  const scoped=pendScope==='all'?p:p.filter(x=>x.k===pendScope);
+  const sorted=scoped.slice().sort((a,b)=>(PEND_RANK[a.k]??1)-(PEND_RANK[b.k]??1));
+  const scopeLabel={all:'',ack:'Critical',move:'Action needed',await:'Waiting on others'}[pendScope];
   return head('mine')+`<div class="sec"><div class="kpis">
-    <div class="kpi a-info"><div class="kpi-top"><div><div class="l">Needs You</div><div class="n">${p.length}</div></div><div class="ic">⏳</div></div><div class="h">total items</div></div>
-    <div class="kpi a-stop"><div class="kpi-top"><div><div class="l">Critical</div><div class="n ${critCount?'s':''}">${critCount}</div></div><div class="ic stop">🚨</div></div><div class="h">${critCount?`<span class="trend stop">changes to acknowledge</span>`:`<span class="trend go">None</span>`}</div></div>
-    <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Action Needed</div><div class="n ${moveCount?'w':''}">${moveCount}</div></div><div class="ic wait">➡</div></div><div class="h">${moveCount?`<span class="trend wait">ready to advance</span>`:`<span class="trend go">None</span>`}</div></div>
-    <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">Waiting on Others</div><div class="n">${awaitCount}</div></div><div class="ic teal">👥</div></div><div class="h">approvals in flight</div></div>
+    ${kpiCard({accent:'a-info',label:'Needs You',value:p.length,icon:'⏳',hint:'total items',
+      act:{label:'View all',on:"setPendScope('all')"}})}
+    ${kpiCard({accent:'a-stop',label:'Critical',value:critCount,nCls:critCount?'s':'',icon:'🚨',icCls:'stop',
+      hint:critCount?`<span class="trend stop">changes to acknowledge</span>`:`<span class="trend go">None</span>`,
+      act:{label:'View critical',on:"setPendScope('ack')"}})}
+    ${kpiCard({accent:'a-wait',label:'Action Needed',value:moveCount,nCls:moveCount?'w':'',icon:'➡',icCls:'wait',
+      hint:moveCount?`<span class="trend wait">ready to advance</span>`:`<span class="trend go">None</span>`,
+      act:{label:'View action needed',on:"setPendScope('move')"}})}
+    ${kpiCard({accent:'a-teal',label:'Waiting on Others',value:awaitCount,icon:'👥',icCls:'teal',
+      hint:'approvals in flight',
+      act:{label:'View waiting',on:"setPendScope('await')"}})}
   </div></div>
   <div class="cols">
-    <div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
+    <div class="c"><div class="h"><h3>${sorted.length} item${sorted.length!==1?'s':''} ${pendScope==='all'?'need you':`— ${E(scopeLabel)}`}</h3>
+      ${pendScope!=='all'?`<div class="r"><button class="lk" onclick="setPendScope('all')">Clear filter</button></div>`:''}</div><div class="b flush">
+    ${!sorted.length?chartEmpty('✓','Nothing in this view','No items match this filter right now.'):''}
     ${sorted.map(x=>{
       if(x.k==='await'){const pend=G(x.a.grp).members.filter(m=>!x.a.dec.some(d=>d.u===m));
         return `<div class="li"><div class="gr"><div class="t">Awaiting approval — ${E(x.r.nm)} <span class="tag" style="margin-left:6px">Waiting on others</span></div>
@@ -1540,18 +1630,32 @@ function releasePipeline(){
 /* ═══ releases ══════════════════════════ */
 function setF(k,v){flt[k]=v;draw()}
 /* ═══ release grid (Excel-style, shared by all 3 categories) ══ */
-let rflt={q:'',sort:'nameAsc',page:1};
+/* `scope` narrows the grid to the slice a Dashboard KPI refers to, so a
+   KPI's View action lands on exactly the rows it counted. */
+let rflt={q:'',scope:'all',sort:'nameAsc',page:1};
+const REL_SCOPES=[
+  {k:'all',      nm:'All releases',        test:r=>true},
+  {k:'inprogress',nm:'In progress',        test:r=>r.cur!=='done'},
+  {k:'upcoming', nm:'Upcoming (planned)',  test:r=>!!r.plan&&r.cur!=='done'},
+  {k:'approval', nm:'Awaiting approval',   test:r=>apps_.some(a=>a.rel===r.id&&a.status==='open')},
+  {k:'prod',     nm:'Scheduled for production',test:r=>r.cur==='prod'},
+  {k:'done',     nm:'Released',            test:r=>r.cur==='done'},
+];
+const relScope=k=>REL_SCOPES.find(x=>x.k===k)||REL_SCOPES[0];
+/* Entry point used by Dashboard KPI actions. */
+function goReleases(scope){rflt.scope=scope;rflt.page=1;releaseTab='my_team';go('relmgmt')}
 const REL_PAGE_SIZE=20;
 let releaseTab='my_team';
 function setReleaseTab(key){releaseTab=key;rflt.page=1;draw()}
 function goRelTab(key){releaseTab=key;go('relmgmt')}
 function setRF(k,v){rflt[k]=v;rflt.page=1;draw()}
-function clearRF(){rflt={q:'',sort:'nameAsc',page:1};draw()}
+function clearRF(){rflt={q:'',scope:'all',sort:'nameAsc',page:1};draw()}
 /* My Team Release, New Release, and BMS Release are the same rows — the
    catKey argument only picks which tab's edit/read-only mode applies, it
    no longer filters which records show. */
 function filteredReleases(catKey){
   let rows=rels.slice();
+  rows=rows.filter(relScope(rflt.scope).test);
   if(rflt.q){
     const q=rflt.q.toLowerCase();
     rows=rows.filter(r=>[r.nm,r.ref,r.jira,r.workstream,r.po,r.scrum,r.bizOwner,r.financeUat,r.desc,U(r.owner).nm]
@@ -1621,6 +1725,9 @@ function vReleaseGrid(){
     <div class="fg">
       <div><label>Search</label><input value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
         oninput="rflt.q=this.value;rflt.page=1;clearTimeout(window._rf);window._rf=setTimeout(draw,220)"></div>
+      <div><label>Show</label><select onchange="setRF('scope',this.value)">
+        ${REL_SCOPES.map(sc=>`<option value="${sc.k}" ${rflt.scope===sc.k?'selected':''}>${E(sc.nm)}</option>`).join('')}
+      </select></div>
       <div><label>Sort by</label><select onchange="setRF('sort',this.value)">
         <option value="nameAsc" ${rflt.sort==='nameAsc'?'selected':''}>Team name (A–Z)</option>
         <option value="nameDesc" ${rflt.sort==='nameDesc'?'selected':''}>Team name (Z–A)</option>
@@ -1833,7 +1940,7 @@ function vRel(){
 
 /* ═══ conflict tracker → project tracker ═ */
 function setCF(k,v){cflt[k]=v;cflt.page=1;draw()}
-function clearCF(){cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',sort:'default',page:1};draw()}
+function clearCF(){cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',progress:'all',sort:'default',page:1};draw()}
 /* Project tabs ARE separate datasets here (unlike Release Management's
    tabs) — a row belongs to exactly one project. Current Status/Mode of
    release/Release Month are freeform text in the source Excel (values
@@ -1846,6 +1953,7 @@ function filteredConflicts(){
     if(cflt.status!=='all'&&c.currentStatus!==cflt.status)return false;
     if(cflt.modeOfRelease!=='all'&&c.modeOfRelease!==cflt.modeOfRelease)return false;
     if(cflt.releaseMonth!=='all'&&c.releaseMonth!==cflt.releaseMonth)return false;
+    if(cflt.progress!=='all'&&!cfProgressTest(cflt.progress)(c))return false;
     if(cflt.q){
       const q=cflt.q.toLowerCase();
       const hay=[c.wave,c.feature,c.story,c.description,c.developers].filter(Boolean).join(' ').toLowerCase();
@@ -1898,19 +2006,23 @@ function vConflicts(){
   /* ── insights: derived only from real CF_FIELDS data, never invented.
      "Completed" = reached the final (Prod) milestone; "Pending" = no
      milestone started yet; everything else counts as "In progress". */
-  const completedCount=projectRows.filter(c=>c.prod).length;
-  const pendingCount=projectRows.filter(c=>!CF_MILESTONE_FIELDS.some(f=>c[f.key])).length;
-  const inProgressCount=projectRows.length-completedCount-pendingCount;
-  const todayISO=now().slice(0,10),in30ISO=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
-  let upcomingCount=0;
-  projectRows.forEach(c=>CF_MILESTONE_FIELDS.forEach(f=>{if(c[f.key]&&c[f.key]>=todayISO&&c[f.key]<=in30ISO)upcomingCount++}));
+  const completedCount=projectRows.filter(cfProgressTest('completed')).length;
+  const pendingCount=projectRows.filter(cfProgressTest('pending')).length;
+  const inProgressCount=projectRows.filter(cfProgressTest('inprogress')).length;
+  const upcomingCount=projectRows.filter(cfProgressTest('upcoming')).length;
+  const todayISO=now().slice(0,10);
 
   const summaryCards=`<div class="sec"><div class="kpis">
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Total Rows</div><div class="n">${projectRows.length}</div></div><div class="ic">📊</div></div><div class="h">in ${E(conflictProject)}</div></div>
-    <div class="kpi a-go"><div class="kpi-top"><div><div class="l">Completed</div><div class="n">${completedCount}</div></div><div class="ic go">✓</div></div><div class="h">reached Prod</div></div>
-    <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">In Progress</div><div class="n">${inProgressCount}</div></div><div class="ic teal">⏳</div></div><div class="h">started, not yet live</div></div>
-    <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Pending</div><div class="n">${pendingCount}</div></div><div class="ic wait">⏱</div></div><div class="h">no milestones started</div></div>
-    <div class="kpi a-info"><div class="kpi-top"><div><div class="l">Upcoming Milestones</div><div class="n">${upcomingCount}</div></div><div class="ic">📅</div></div><div class="h">due in the next 30 days</div></div>
+    ${kpiCard({label:'Total Rows',value:projectRows.length,icon:'📊',hint:`in ${E(conflictProject)}`,
+      act:{label:'View all rows',on:"goCfProgress('all')"}})}
+    ${kpiCard({accent:'a-go',label:'Completed',value:completedCount,icon:'✓',icCls:'go',hint:'reached Prod',
+      act:{label:'View completed',on:"goCfProgress('completed')"}})}
+    ${kpiCard({accent:'a-teal',label:'In Progress',value:inProgressCount,icon:'⏳',icCls:'teal',hint:'started, not yet live',
+      act:{label:'View in progress',on:"goCfProgress('inprogress')"}})}
+    ${kpiCard({accent:'a-wait',label:'Pending',value:pendingCount,icon:'⏱',icCls:'wait',hint:'no milestones started',
+      act:{label:'View pending',on:"goCfProgress('pending')"}})}
+    ${kpiCard({accent:'a-info',label:'Upcoming Milestones',value:upcomingCount,icon:'📅',hint:'due in the next 30 days',
+      act:{label:'View upcoming',on:"goCfProgress('upcoming')"}})}
   </div></div>`;
 
   const milestoneBars=CF_MILESTONE_FIELDS.map(f=>[f.h,projectRows.filter(c=>c[f.key]).length]);
@@ -1942,6 +2054,9 @@ function vConflicts(){
     <div class="fg">
       <div><label>Search</label><input value="${E(cflt.q)}" placeholder="Wave, Feature#, Story#, description, developers"
         oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(draw,220)"></div>
+      <div><label>Progress</label><select onchange="setCF('progress',this.value)">
+        ${CF_PROGRESS.map(o=>`<option value="${o.k}" ${cflt.progress===o.k?'selected':''}>${E(o.nm)}</option>`).join('')}
+      </select></div>
       <div><label>Current Status</label><select onchange="setCF('status',this.value)"><option value="all">All statuses</option>
         ${statusValues.map(t=>`<option ${cflt.status===t?'selected':''}>${E(t)}</option>`).join('')}</select></div>
       <div><label>Mode of release</label><select onchange="setCF('modeOfRelease',this.value)"><option value="all">All modes</option>
@@ -2321,18 +2436,28 @@ function audRail(){
 }
 
 /* ═══ admin ═════════════════════════════ */
+/* Directory KPIs filter the table below them in place. */
+let usrScope='all';
+function setUsrScope(k){usrScope=k;draw();window.scrollTo(0,0)}
 function vUsr(){
   const activeCount=users.filter(u=>u.active).length;
+  const shownUsers=usrScope==='all'?users
+    :usrScope==='active'?users.filter(u=>u.active):users.filter(u=>!u.active);
   const summary=users.length?`<div class="sec"><div class="kpis">
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Total Users</div><div class="n">${users.length}</div></div><div class="ic">👤</div></div><div class="h">in the directory</div></div>
-    <div class="kpi a-go"><div class="kpi-top"><div><div class="l">Active</div><div class="n">${activeCount}</div></div><div class="ic go">✓</div></div><div class="h">receiving alerts</div></div>
-    <div class="kpi a-stop"><div class="kpi-top"><div><div class="l">Inactive</div><div class="n">${users.length-activeCount}</div></div><div class="ic">⏸</div></div><div class="h">excluded from new mail</div></div>
+    ${kpiCard({label:'Total Users',value:users.length,icon:'👤',hint:'in the directory',
+      act:{label:'View all',on:"setUsrScope('all')"}})}
+    ${kpiCard({accent:'a-go',label:'Active',value:activeCount,icon:'✓',icCls:'go',hint:'receiving alerts',
+      act:{label:'View active',on:"setUsrScope('active')"}})}
+    ${kpiCard({accent:'a-stop',label:'Inactive',value:users.length-activeCount,icon:'⏸',hint:'excluded from new mail',
+      act:{label:'View inactive',on:"setUsrScope('inactive')"}})}
   </div></div>`:'';
   return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`)+summary+`
   <div class="sec"><div class="mt">Inactive users are excluded from new approval and notification emails but remain visible in existing history.</div></div>
-  <div class="c"><div class="b flush">${users.length?`<div class="tw"><table class="xgrid">
+  <div class="c"><div class="h"><h3>${usrScope==='all'?'All users':usrScope==='active'?'Active users':'Inactive users'} · ${shownUsers.length}</h3>
+    ${usrScope!=='all'?`<div class="r"><button class="lk" onclick="setUsrScope('all')">Clear filter</button></div>`:''}</div>
+    <div class="b flush">${shownUsers.length?`<div class="tw"><table class="xgrid">
     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Responsibility</th><th>Components</th><th>Status</th><th></th></tr></thead>
-    <tbody>${users.map(u=>`<tr>
+    <tbody>${shownUsers.map(u=>`<tr>
       <td class="tt">${E(u.nm)}</td><td class="mono" style="font-size:11.5px;color:var(--mut)">${E(u.em)}</td>
       <td>${E(u.role)}</td><td style="color:var(--mut);font-size:12.5px">${E(u.resp)}</td>
       <td>${u.comp.map(c=>E(C(c).nm)).join(', ')||'<span style="color:var(--mut2)">—</span>'}</td>
@@ -2342,6 +2467,7 @@ function vUsr(){
         <button class="bt s d" onclick="mDelUser('${u.id}')">Delete</button>
       </td>
     </tr>`).join('')}</tbody></table></div>`
+    :users.length?chartEmpty('🔍','No users in this view','No users match this filter.')
     :chartEmpty('👤','No users yet','Add a user to start routing approvals and alerts.')}</div></div>
   ${users.length?`<div class="sec g2" style="margin-top:22px">
     ${panel('Directory by role',statRows(countBy(users,u=>u.role).map(([label,count],i)=>
