@@ -41,7 +41,16 @@
   --m:"JetBrains Mono",ui-monospace,monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--paper);color:var(--ink);font-family:var(--b);font-size:14px;line-height:1.6;
+body{
+  /* A soft navy/teal wash behind every page instead of flat gray — most
+     visible on shorter pages where content doesn't fill the viewport,
+     so empty space still reads as a designed surface, not a blank one. */
+  background:
+    radial-gradient(1100px 620px at 12% -8%, rgba(27,58,99,.05), transparent 58%),
+    radial-gradient(900px 520px at 100% 0%, rgba(14,124,134,.055), transparent 55%),
+    var(--paper);
+  background-attachment:fixed;
+  color:var(--ink);font-family:var(--b);font-size:14px;line-height:1.6;
   -webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
 :focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:4px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -1249,9 +1258,13 @@ function vMine(){
     <h4>Nothing waiting on you</h4><p>Approvals you have requested and change alerts on your components will appear here.</p></div></div>`;
   const sorted=p.slice().sort((a,b)=>(PEND_RANK[a.k]??1)-(PEND_RANK[b.k]??1));
   const critCount=p.filter(x=>x.k==='ack').length;
+  const moveCount=p.filter(x=>x.k==='move').length;
+  const awaitCount=p.filter(x=>x.k==='await').length;
   return head('mine')+`<div class="sec"><div class="kpis">
     <div class="kpi"><div class="kpi-top"><div><div class="l">Needs You</div><div class="n">${p.length}</div></div><div class="ic">⏳</div></div><div class="h">total items</div></div>
     <div class="kpi"><div class="kpi-top"><div><div class="l">Critical</div><div class="n ${critCount?'s':''}">${critCount}</div></div><div class="ic stop">🚨</div></div><div class="h">${critCount?`<span class="trend stop">changes to acknowledge</span>`:`<span class="trend go">None</span>`}</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Action Needed</div><div class="n ${moveCount?'w':''}">${moveCount}</div></div><div class="ic wait">➡</div></div><div class="h">${moveCount?`<span class="trend wait">ready to advance</span>`:`<span class="trend go">None</span>`}</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Waiting on Others</div><div class="n">${awaitCount}</div></div><div class="ic teal">👥</div></div><div class="h">approvals in flight</div></div>
   </div></div>
   <div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
   ${sorted.map(x=>{
