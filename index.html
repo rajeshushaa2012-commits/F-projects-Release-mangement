@@ -27,8 +27,10 @@
   --info:#2E6DB4; --info-bg:#E8F1FB; --info-ln:#C3D9F0;
 
   --btn:var(--navy);
-  --sh:0 1px 2px rgba(15,19,24,.04), 0 2px 6px rgba(15,19,24,.05);
-  --sh2:0 4px 16px rgba(15,19,24,.09);
+  /* Cards sit on a tinted canvas now, so they need real elevation to
+     separate from it — a tight contact shadow plus a wider soft one. */
+  --sh:0 1px 2px rgba(19,38,66,.07), 0 4px 12px rgba(19,38,66,.08), 0 12px 28px rgba(19,38,66,.05);
+  --sh2:0 6px 20px rgba(19,38,66,.14), 0 18px 44px rgba(19,38,66,.12);
 
   /* Dark navy sidebar — a distinct surface from the light content area,
      the single biggest visual cue that this is a designed product shell
@@ -138,25 +140,47 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 /* Shared page header band. Every page gets the same anchored header
    surface (the dashboard uses the richer .hero variant below), so a
    title is never bare text floating on the page background. */
-.ph{margin-bottom:22px;position:relative;overflow:hidden;border-radius:14px;
-  padding:22px 26px;border:1px solid var(--line);box-shadow:var(--sh);
-  background:linear-gradient(118deg,var(--card) 0%,var(--card) 42%,var(--navy-bg) 100%);
+/* Every page gets the same branded navy→teal header band the dashboard
+   uses, so the app reads as one designed product rather than a white
+   admin panel. Same construction as .hero: gradient + radial glows +
+   a masked grid overlay. */
+.ph{margin-bottom:22px;position:relative;overflow:hidden;border-radius:16px;
+  padding:26px 30px;border:0;box-shadow:0 8px 26px rgba(15,32,54,.22);
+  background:linear-gradient(128deg,#12283F 0%,#1B3A63 46%,#0E6068 100%);
   display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap}
-.ph::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
-  background:linear-gradient(180deg,var(--navy),var(--teal))}
+.ph::before{content:'';position:absolute;inset:0;
+  background:radial-gradient(600px 300px at 90% -40%, rgba(20,163,177,.40), transparent 66%),
+             radial-gradient(420px 260px at 4% 130%, rgba(46,109,180,.34), transparent 70%)}
+.ph::after{content:'';position:absolute;inset:0;opacity:.5;
+  background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);
+  background-size:44px 44px;
+  -webkit-mask-image:linear-gradient(102deg,#000 8%,transparent 58%);
+          mask-image:linear-gradient(102deg,#000 8%,transparent 58%)}
+.ph>*{position:relative;z-index:1}
 .ph .phl{flex:1;min-width:260px}
-.ph h1{font-size:27px;font-weight:700;letter-spacing:-.032em;line-height:1.14}
-.ph p{color:var(--mut);font-size:14px;margin-top:5px;max-width:64ch}
+.ph h1{font-size:27px;font-weight:700;letter-spacing:-.032em;line-height:1.14;color:#fff}
+.ph p{color:rgba(233,239,247,.76);font-size:14px;margin-top:5px;max-width:64ch}
 .ph .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+/* Controls sitting on the dark band need their own treatment. */
+.ph .acts .bt{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.24);color:#fff;box-shadow:none}
+.ph .acts .bt:hover{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.34)}
+.ph .acts .bt.p{background:var(--teal);border-color:var(--teal)}
+.ph .acts .bt.p:hover{background:#12909C;border-color:#12909C}
+.ph .acts .bt.d{color:#F7ADA2;border-color:rgba(247,173,162,.4)}
+.ph .acts .bt.d:hover{background:rgba(247,173,162,.16)}
+.ph .lk{color:rgba(233,239,247,.72)}
+.ph .lk:hover{color:#fff}
+.ph .mono{color:rgba(233,239,247,.6)!important}
 .ph .phchips{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 /* Header stat chip — real derived counts, never filler. */
 .phchip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;
-  color:var(--ink2);background:var(--card);border:1px solid var(--line2);
+  color:#DDE7F2;background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.17);
   border-radius:20px;padding:4px 12px}
-.phchip i{width:7px;height:7px;border-radius:50%;background:var(--navy);flex:none}
-.phchip.go i{background:var(--go)}.phchip.wait i{background:var(--wait)}
-.phchip.stop i{background:var(--stop)}.phchip.teal i{background:var(--teal)}
-@media(max-width:920px){.ph{padding:18px 18px;border-radius:12px}.ph h1{font-size:23px}}
+.phchip i{width:7px;height:7px;border-radius:50%;background:#9FC0E6;flex:none}
+.phchip.go i{background:#8FE3B8}.phchip.wait i{background:#FBD98B}
+.phchip.stop i{background:#F7ADA2}.phchip.teal i{background:#6FD8DE}
+@media(max-width:920px){.ph{padding:20px 18px;border-radius:14px}.ph h1{font-size:23px}}
 
 /* ── dashboard hero band ────────────────────
    A deep navy→teal gradient panel anchoring the landing page, with the
