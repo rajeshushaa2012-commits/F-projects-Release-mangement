@@ -134,6 +134,40 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .ph p{color:var(--mut);font-size:14.5px;margin-top:6px;max-width:64ch}
 .ph .acts{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
 
+/* ── dashboard hero band ────────────────────
+   A deep navy→teal gradient panel anchoring the landing page, with the
+   KPI row lifted to overlap its lower edge. Breaks the "white cards on
+   gray" flatness and gives the dashboard a clear focal point. */
+.hero{position:relative;overflow:hidden;border-radius:16px;padding:28px 30px 66px;
+  background:linear-gradient(128deg,#12283F 0%,#1B3A63 46%,#0E6068 100%);
+  box-shadow:0 8px 28px rgba(15,32,54,.24)}
+.hero::before{content:'';position:absolute;inset:0;
+  background:radial-gradient(620px 300px at 88% -34%, rgba(20,163,177,.40), transparent 68%),
+             radial-gradient(440px 260px at 6% 128%, rgba(46,109,180,.34), transparent 70%)}
+.hero::after{content:'';position:absolute;inset:0;opacity:.55;
+  background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);
+  background-size:46px 46px;
+  -webkit-mask-image:linear-gradient(102deg,#000 10%,transparent 60%);
+          mask-image:linear-gradient(102deg,#000 10%,transparent 60%)}
+.hero>*{position:relative;z-index:1}
+.hero h1{font-family:var(--d);font-size:29px;font-weight:700;letter-spacing:-.033em;
+  line-height:1.14;color:#fff}
+.hero p{font-size:14px;color:rgba(233,239,247,.76);margin-top:6px;max-width:62ch}
+.hero .hchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.hchip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;
+  color:#DDE7F2;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.15);
+  border-radius:20px;padding:5px 13px}
+.hchip i{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.hchip.go{color:#8FE3B8}.hchip.wait{color:#FBD98B}.hchip.stop{color:#F7ADA2}
+/* KPI row pulled up so it straddles the hero's bottom edge. */
+.hero-lift{margin-top:-44px;position:relative;z-index:2}
+@media(max-width:920px){
+  .hero{padding:22px 20px 56px;border-radius:14px}
+  .hero h1{font-size:24px}
+  .hero-lift{margin-top:-38px}
+}
+
 /* ── stat strip ────────────────────────── */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));
   background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);overflow:hidden}
@@ -147,8 +181,18 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 
 /* ── kpi cards ─────────────────────────── */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);
-  padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.kpi{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--sh);padding:16px 18px;display:flex;flex-direction:column;gap:10px;
+  overflow:hidden;transition:box-shadow .15s,transform .15s}
+.kpi:hover{box-shadow:var(--sh2);transform:translateY(-1px)}
+/* Semantic accent bar across the card top — ties each metric to its
+   meaning (navy=neutral, teal=active, amber=waiting, green=shipped). */
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--navy)}
+.kpi.a-teal::before{background:var(--teal)}
+.kpi.a-go::before{background:var(--go)}
+.kpi.a-wait::before{background:var(--wait)}
+.kpi.a-stop::before{background:var(--stop)}
+.kpi.a-info::before{background:var(--info)}
 .kpi-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .kpi .ic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
   font-size:16px;flex:none;background:var(--navy-bg);color:var(--navy)}
@@ -166,8 +210,11 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .kpi .trend.stop{background:var(--stop-bg);color:var(--stop)}
 .kpi .trend.mut{background:var(--sunk);color:var(--mut)}
 
-/* ── charts (pure css, no js lib) ─────────── */
-.chart-row{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+/* ── charts (pure css, no js lib) ───────────
+   Chart bodies fill their card and centre their content, so a card with
+   only two bars doesn't leave dead space when its row-sibling is taller. */
+.chart-row{display:flex;gap:26px;align-items:center;flex-wrap:wrap;
+  height:100%;min-height:150px;justify-content:center}
 .donut{width:132px;height:132px;border-radius:50%;flex:none;position:relative}
 .donut .hole{position:absolute;inset:20px;border-radius:50%;background:var(--card);
   display:flex;flex-direction:column;align-items:center;justify-content:center}
@@ -178,7 +225,7 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .legend .sw{width:10px;height:10px;border-radius:3px;flex:none}
 .legend .lbl{flex:1;color:var(--ink2)}
 .legend .val{font-family:var(--d);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
-.hbars{display:flex;flex-direction:column;gap:12px}
+.hbars{display:flex;flex-direction:column;gap:12px;height:100%;min-height:150px;justify-content:center}
 .hbar-top{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}
 .hbar-row .top .lbl{color:var(--ink2)}
 .hbar-row .top .val{font-family:var(--d);color:var(--mut);font-variant-numeric:tabular-nums}
@@ -1174,20 +1221,31 @@ function vDash(){
   const projectPalette=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
   const projectSegs=projectBars.slice(0,6).map(([label,count],i)=>({label,count,color:projectPalette[i%projectPalette.length]}));
 
-  return head('dash')+(authUser&&authUser.must_change_password?`<div class="sec"><div class="mt w">
-    You're signed in with a temporary password. <button class="lk" onclick="go('mypw')">Change it now</button>.</div></div>`:'')+helpCard()+`
-  <div class="sec"><div class="kpis">
+  const released=rels.filter(r=>r.cur==='done').length;
+  return `<div class="hero">
+    <h1>Dashboard</h1>
+    <p>Everything that needs your eyes, in one place.</p>
+    <div class="hchips">
+      <span class="hchip ${att.length?'wait':'go'}"><i></i>${att.length?`${att.length} item${att.length!==1?'s':''} need attention`:'Nothing needs attention'}</span>
+      <span class="hchip"><i></i>${totalRels} release${totalRels!==1?'s':''} across ${comps.length} component${comps.length!==1?'s':''}</span>
+      ${waiting?`<span class="hchip wait"><i></i>${waiting} awaiting approval</span>`:''}
+      ${released?`<span class="hchip go"><i></i>${released} released</span>`:''}
+    </div>
+  </div>
+  <div class="sec hero-lift"><div class="kpis">
     <div class="kpi"><div class="kpi-top"><div><div class="l">Total Releases</div><div class="n">${totalRels}</div></div>
       <div class="ic">📦</div></div><div class="h">across ${comps.length} components</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Releases in Progress</div><div class="n">${inprog}</div></div>
+    <div class="kpi a-teal"><div class="kpi-top"><div><div class="l">Releases in Progress</div><div class="n">${inprog}</div></div>
       <div class="ic teal">⏳</div></div><div class="h">not yet released ${att.length?`<span class="trend wait">${att.length} need attention</span>`:`<span class="trend go">On track</span>`}</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Upcoming Releases</div><div class="n">${upcomingCount}</div></div>
+    <div class="kpi a-info"><div class="kpi-top"><div><div class="l">Upcoming Releases</div><div class="n">${upcomingCount}</div></div>
       <div class="ic">📅</div></div><div class="h">have a planned date</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Pending Approval</div><div class="n ${waiting?'w':''}">${waiting}</div></div>
+    <div class="kpi a-wait"><div class="kpi-top"><div><div class="l">Pending Approval</div><div class="n ${waiting?'w':''}">${waiting}</div></div>
       <div class="ic wait">⚠</div></div><div class="h">${waiting?`<span class="trend wait">requests open</span>`:`<span class="trend go">None pending</span>`}</div></div>
-    <div class="kpi"><div class="kpi-top"><div><div class="l">Scheduled for Production</div><div class="n">${scheduledForProd}</div></div>
+    <div class="kpi a-go"><div class="kpi-top"><div><div class="l">Scheduled for Production</div><div class="n">${scheduledForProd}</div></div>
       <div class="ic go">🚀</div></div><div class="h">at that gate now</div></div>
-  </div></div>
+  </div></div>`
+  +(authUser&&authUser.must_change_password?`<div class="sec"><div class="mt w">
+    You're signed in with a temporary password. <button class="lk" onclick="go('mypw')">Change it now</button>.</div></div>`:'')+helpCard()+`
 
   <div class="sec g2">
     <div class="c"><div class="h"><h3>Release Status</h3></div><div class="b">
@@ -1219,35 +1277,41 @@ function vDash(){
 
   <div class="sec grid">
     <div class="c"><div class="h"><h3>Releases in progress</h3>
-      <div class="r"><button class="lk" onclick="goRelTab('my_team')">View all →</button></div></div>
-      <div class="b flush"><div class="tw"><table>
+      <div class="r">${inprog?`<span class="tag">${inprog} active</span>`:''}<button class="lk" onclick="goRelTab('my_team')">View all →</button></div></div>
+      <div class="b flush">${inprog?`<div class="tw"><table>
       <thead><tr><th>Team Name</th><th>Component</th><th>Gate</th><th>State</th><th>Planned</th></tr></thead><tbody>
       ${rels.filter(r=>r.cur!=='done').map(r=>`<tr class="k" onclick="openR('${r.id}')">
         <td><div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div></td>
         <td>${E(C(r.comp).nm)}</td><td>${E(SL(r.cur))}</td><td>${stt(stageState(r,r.cur))}</td>
         <td class="mono" style="font-size:12px">${fd(r.plan)}</td></tr>`).join('')}
-      </tbody></table></div></div></div>
+      </tbody></table></div>`
+      :chartEmpty('📦','No releases in progress','Releases still moving through the gates will be listed here.')}
+      </div></div>
 
-    <div>
-      <div class="c sec"><div class="h"><h3>Upcoming production</h3></div><div class="b flush">
-        ${up.length?up.map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.nm)}</div>
-          <div class="d">${r.ref} · ${E(C(r.comp).nm)}</div></div>
-          <div class="mono" style="font-size:11.5px;color:var(--mut);white-space:nowrap">${fd(r.plan)}</div></div>`).join('')
-        :'<div class="ept"><p>No dates planned yet.</p></div>'}
-      </div></div>
-      <div class="c"><div class="h"><h3>Recent messages</h3>
-        <div class="r"><button class="lk" onclick="go('note')">All →</button></div></div><div class="b flush">
-        ${notifs.slice(0,4).map(n=>`<div class="li"><div class="gr"><div class="t">${E(n.sub)}</div>
-          <div class="d">${n.ty} · ${n.to.length} recipient${n.to.length!==1?'s':''} · ${fdt(n.on)}</div></div></div>`).join('')}
-      </div></div>
-    </div>
+    <div class="c"><div class="h"><h3>Upcoming production</h3>
+      ${up.length?`<div class="r"><span class="tag">next ${up.length}</span></div>`:''}</div><div class="b flush">
+      ${up.length?up.map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.nm)}</div>
+        <div class="d">${r.ref} · ${E(C(r.comp).nm)}</div></div>
+        <div class="mono" style="font-size:11.5px;color:var(--mut);white-space:nowrap">${fd(r.plan)}</div></div>`).join('')
+      :chartEmpty('📅','No dates planned','Releases with a planned production date will appear here.')}
+    </div></div>
   </div>
 
-  ${done.length?`<div class="c"><div class="h"><h3>Recently completed</h3></div><div class="b flush">
-    ${done.map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.nm)}</div>
-      <div class="d">${r.ref} · released ${fd(r.actual)}</div></div>
-      <span class="tick">✓ Live</span></div>`).join('')}
-  </div></div>`:''}`;
+  <div class="sec g2">
+    <div class="c"><div class="h"><h3>Recent messages</h3>
+      <div class="r"><button class="lk" onclick="go('note')">All →</button></div></div><div class="b flush">
+      ${notifs.length?notifs.slice(0,5).map(n=>`<div class="li"><div class="gr"><div class="t">${E(n.sub)}</div>
+        <div class="d">${n.ty} · ${n.to.length} recipient${n.to.length!==1?'s':''} · ${fdt(n.on)}</div></div></div>`).join('')
+      :chartEmpty('📨','No messages yet','Approval requests and alerts the app sends will be listed here.')}
+    </div></div>
+    <div class="c"><div class="h"><h3>Recently completed</h3>
+      ${done.length?`<div class="r"><span class="tag">${done.length} live</span></div>`:''}</div><div class="b flush">
+      ${done.length?done.map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.nm)}</div>
+        <div class="d">${r.ref} · released ${fd(r.actual)}</div></div>
+        <span class="tick">✓ Live</span></div>`).join('')
+      :chartEmpty('✓','Nothing released yet','Completed releases will be listed here once they go live.')}
+    </div></div>
+  </div>`;
 }
 
 /* ═══ my pending ════════════════════════ */
