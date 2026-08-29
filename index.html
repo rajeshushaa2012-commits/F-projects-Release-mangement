@@ -42,16 +42,16 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{
-  /* App canvas. A faint dot grid plus a soft navy/teal wash, so open
-     areas of a page read as a designed surface instead of blank white.
-     Cards are opaque, so the texture only shows where the page is
-     genuinely empty. Fixed attachment keeps it steady while scrolling. */
+  /* App canvas. A clearly tinted blue-grey surface with a dot grid and
+     navy/teal washes, so white cards read as panels sitting ON a themed
+     canvas rather than merging into a white page. Fixed attachment keeps
+     it steady while scrolling. */
   background:
-    radial-gradient(rgba(27,58,99,.10) 1px, transparent 1.5px) 0 0/24px 24px,
-    radial-gradient(1250px 720px at 6% -12%, rgba(27,58,99,.16), transparent 62%),
-    radial-gradient(1050px 640px at 100% 2%, rgba(14,124,134,.15), transparent 60%),
-    radial-gradient(950px 720px at 55% 112%, rgba(27,58,99,.13), transparent 64%),
-    linear-gradient(178deg,#EDF2F8 0%,#E5ECF5 52%,#DDE6F1 100%);
+    radial-gradient(rgba(23,49,86,.14) 1px, transparent 1.6px) 0 0/24px 24px,
+    radial-gradient(1300px 760px at 4% -14%, rgba(27,58,99,.30), transparent 60%),
+    radial-gradient(1100px 680px at 100% 0%, rgba(14,124,134,.26), transparent 58%),
+    radial-gradient(1000px 760px at 58% 114%, rgba(27,58,99,.24), transparent 62%),
+    linear-gradient(176deg,#DDE6F3 0%,#D2DDEC 50%,#C6D3E6 100%);
   background-attachment:fixed,fixed,fixed,fixed,fixed;
   color:var(--ink);font-family:var(--b);font-size:14px;line-height:1.6;
   -webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
@@ -108,7 +108,7 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .acct .menu button.dgr{color:var(--stop)}
 
 .main{min-width:0;display:flex;flex-direction:column}
-.top{background:rgba(247,249,252,.72);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);
+.top{background:rgba(226,234,246,.66);backdrop-filter:blur(14px) saturate(1.15);border-bottom:1px solid var(--line);
   padding:0 34px;height:57px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:20}
 .crumb{font-size:12.5px;color:var(--mut);font-weight:500}
 .top .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
@@ -2352,7 +2352,7 @@ function vGrp(){
             <option value="any" ${g.cond==='any'?'selected':''}>Any one approver</option>
             <option value="all" ${g.cond==='all'?'selected':''}>All approvers</option>
           </select></div>
-      </div>`;}).join('')}
+      </div></div>`;}).join('')}
   </div>`;
 }
 function vCmp(){
@@ -2384,7 +2384,7 @@ function vCmp(){
         <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Change alerts go to the active owners below, excluding whoever made the change</div>
         <div class="chips">${c.owners.map(o=>`<span class="chip ${U(o).active?'':'off'}">
           <span class="n">${E(U(o).nm)}</span></span>`).join('')}</div>
-      </div>`;}).join('')}
+      </div></div>`;}).join('')}
   </div>`;
 }
 function vTpl(){
