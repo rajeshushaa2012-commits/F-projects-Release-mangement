@@ -53,9 +53,9 @@ SESSION_LIFETIME = timedelta(hours=12)
 # HTTPS (443) is never blocked, so this works everywhere.
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
 SENDER_EMAIL = os.environ.get("RELAY_SMTP_USER")  # must be a sender verified in Brevo
-SENDER_NAME = os.environ.get("RELAY_SMTP_FROM_NAME", "Relay")
+SENDER_NAME = os.environ.get("RELAY_SMTP_FROM_NAME", "BMS Release Management")
 
-app = FastAPI(title="Relay")
+app = FastAPI(title="BMS Release Management")
 
 
 class EmailPayload(BaseModel):

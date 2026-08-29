@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Relay — release management and approval</title>
+<title>BMS Release Management</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -73,6 +73,71 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
   display:grid;place-items:center;color:#fff;font-family:var(--d);font-weight:700;font-size:14.5px;flex:none;
   box-shadow:0 2px 6px rgba(0,0,0,.35)}
 .mark b{font-family:var(--d);font-size:17px;font-weight:700;letter-spacing:-.03em;color:var(--rail-ink)}
+.mark .mk{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+.mark .mk b{font-size:16px}
+.mark .mk span{font-size:10.5px;color:var(--rail-ink2);letter-spacing:.015em;white-space:nowrap}
+
+/* ── auth mode: the sign-in screen takes the whole viewport ──
+   The shell's rail column and top bar are hidden and .body loses its
+   padding/max-width so the split panel can run edge to edge. */
+body.auth .rail,body.auth .top{display:none}
+body.auth .shell{grid-template-columns:1fr}
+body.auth .body{padding:0;max-width:none}
+.auth-split{display:grid;grid-template-columns:56% 1fr;min-height:100vh}
+.auth-art{position:relative;overflow:hidden;padding:46px 48px;display:flex;
+  flex-direction:column;justify-content:space-between;
+  background:linear-gradient(150deg,#12283F 0%,#1B3A63 52%,#0E6068 100%)}
+.auth-art::before{content:'';position:absolute;inset:0;
+  background:radial-gradient(620px 320px at 88% -30%, rgba(20,163,177,.40), transparent 66%),
+             radial-gradient(460px 280px at 2% 120%, rgba(46,109,180,.34), transparent 70%)}
+.auth-art::after{content:'';position:absolute;inset:0;opacity:.5;
+  background-image:linear-gradient(rgba(255,255,255,.055) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.055) 1px,transparent 1px);
+  background-size:46px 46px;
+  -webkit-mask-image:linear-gradient(120deg,#000 6%,transparent 64%);
+          mask-image:linear-gradient(120deg,#000 6%,transparent 64%)}
+.auth-art>*{position:relative;z-index:1}
+.auth-brand{display:flex;align-items:center;gap:12px}
+.auth-brand .lg{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
+  background:linear-gradient(150deg,var(--teal),#0a5a63);color:#fff;
+  font-family:var(--d);font-weight:700;font-size:17px;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.auth-brand .mk{display:flex;flex-direction:column;line-height:1.15}
+.auth-brand .mk b{font-family:var(--d);font-size:19px;font-weight:700;letter-spacing:-.03em;color:#fff}
+.auth-brand .mk span{font-size:12px;color:rgba(224,235,247,.66)}
+.auth-head h2{font-family:var(--d);font-size:clamp(26px,3.2vw,38px);font-weight:600;
+  letter-spacing:-.032em;line-height:1.16;color:#fff;text-wrap:balance;margin-bottom:12px}
+.auth-head p{font-size:14.5px;color:rgba(224,235,247,.72);max-width:42ch}
+/* Isometric gate stack — brand art for the release pipeline. */
+.auth-gates{display:flex;flex-direction:column;gap:12px;margin-top:30px}
+.auth-gates i{display:block;height:26px;border-radius:6px;transform:skewX(-26deg);
+  background:linear-gradient(90deg,rgba(20,163,177,.85),rgba(20,163,177,.20));
+  border:1px solid rgba(127,227,239,.38)}
+.auth-gates i:nth-child(1){width:62%}
+.auth-gates i:nth-child(2){width:52%;margin-left:7%;opacity:.78}
+.auth-gates i:nth-child(3){width:42%;margin-left:14%;opacity:.56}
+.auth-gates i:nth-child(4){width:32%;margin-left:21%;opacity:.34}
+.auth-foot{font-size:12px;color:rgba(224,235,247,.5)}
+.auth-form{display:grid;place-items:center;padding:40px 32px;background:var(--card)}
+.auth-box{width:100%;max-width:340px}
+.auth-box h3{font-family:var(--d);font-size:23px;font-weight:700;letter-spacing:-.028em;
+  color:var(--ink);margin-bottom:5px}
+.auth-box .sub{color:var(--mut);font-size:13.5px;margin-bottom:22px}
+.auth-box label{margin-top:2px}
+/* On desktop the art panel carries the branding, so the form column
+   doesn't repeat it; below 900px the panel is hidden and this takes over. */
+.auth-mini{display:none;align-items:center;gap:11px;margin-bottom:26px}
+.auth-mini .lg{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+  background:linear-gradient(150deg,var(--teal),#0a5a63);color:#fff;
+  font-family:var(--d);font-weight:700;font-size:15px}
+.auth-mini .mk{display:flex;flex-direction:column;line-height:1.15}
+.auth-mini .mk b{font-family:var(--d);font-size:17px;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+.auth-mini .mk span{font-size:11.5px;color:var(--mut)}
+@media(max-width:900px){
+  .auth-split{grid-template-columns:1fr}
+  .auth-art{display:none}
+  .auth-form{min-height:100vh;align-content:center}
+  .auth-mini{display:flex}
+}
 .ngrp{padding:18px 20px 8px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
   text-transform:uppercase;color:var(--rail-ink2);opacity:.75}
 .ngrp:first-child{padding-top:4px}
@@ -788,17 +853,33 @@ function isEditing(){
 function showLogin(msg){
   document.getElementById('rail').innerHTML='';
   document.getElementById('crumb').textContent='Sign in';
+  document.body.classList.add('auth');
   document.getElementById('view').innerHTML=`
-    <div style="max-width:360px;margin:90px auto" class="c"><div class="b">
-      <h3 style="margin-bottom:6px;font-family:var(--d);font-size:19px;font-weight:700">Sign in to Relay</h3>
-      <p style="color:var(--mut);font-size:13px;margin-bottom:16px">${msg||'Enter your username and password.'}</p>
-      <label>Username</label><input id="lu" placeholder="Username" style="margin-bottom:12px">
-      <label>Password</label><input id="lp" type="password" placeholder="Password" style="margin-bottom:12px">
-      <div class="er" id="e-login"></div>
-      <button class="bt p" style="width:100%" onclick="submitLogin()">Sign in</button>
-    </div></div>`;
+    <div class="auth-split">
+      <div class="auth-art">
+        <div class="auth-brand"><div class="lg">B</div>
+          <div class="mk"><b>BMS</b><span>Release Management</span></div></div>
+        <div class="auth-head">
+          <h2>Every release,<br>one clear path.</h2>
+          <p>Grooming through production, with approvals recorded at every gate.</p>
+          <div class="auth-gates"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="auth-foot">Sign in to view releases, conflicts and approvals.</div>
+      </div>
+      <div class="auth-form"><div class="auth-box">
+        <div class="auth-mini"><div class="lg">B</div>
+          <div class="mk"><b>BMS</b><span>Release Management</span></div></div>
+        <h3>Sign in</h3>
+        <p class="sub">${E(msg||'Enter your username and password.')}</p>
+        <label>Username</label><input id="lu" placeholder="Username" autocomplete="username" style="margin-bottom:12px">
+        <label>Password</label><input id="lp" type="password" placeholder="Password" autocomplete="current-password" style="margin-bottom:12px">
+        <div class="er" id="e-login"></div>
+        <button class="bt p" style="width:100%;margin-top:6px" onclick="submitLogin()">Sign in</button>
+      </div></div>
+    </div>`;
   const lu=document.getElementById('lu');
   lu.focus();
+  lu.addEventListener('keydown',e=>{if(e.key==='Enter')submitLogin()});
   document.getElementById('lp').addEventListener('keydown',e=>{if(e.key==='Enter')submitLogin()});
 }
 async function submitLogin(){
@@ -822,7 +903,7 @@ async function doLogout(){
 async function afterLogin(){
   let res;
   try{res=await fetch('/api/state',{credentials:'same-origin'})}
-  catch(e){document.getElementById('view').innerHTML='<div class="ept"><h4>Cannot reach the server</h4><p>Check that the Relay backend is running.</p></div>';return}
+  catch(e){document.getElementById('view').innerHTML='<div class="ept"><h4>Cannot reach the server</h4><p>Check that the BMS Release Management server is running.</p></div>';return}
   if(res.status===401){authUser=null;showLogin('Your session expired. Please sign in again.');return}
   if(res.status===403){
     // Logged in, but no view_releases permission — still a valid session, just start on a page they can see.
@@ -836,7 +917,7 @@ async function afterLogin(){
 async function boot(){
   let res;
   try{res=await fetch('/api/auth/me',{credentials:'same-origin'})}
-  catch(e){document.getElementById('view').innerHTML='<div class="ept"><h4>Cannot reach the server</h4><p>Check that the Relay backend is running.</p></div>';return}
+  catch(e){document.getElementById('view').innerHTML='<div class="ept"><h4>Cannot reach the server</h4><p>Check that the BMS Release Management server is running.</p></div>';return}
   if(!res.ok){showLogin();return}
   authUser=await res.json();
   await afterLogin();
@@ -984,7 +1065,8 @@ function initialsOf(name){
   return(parts.length>=2?(parts[0][0]||'')+(parts[1][0]||''):(parts[0]||'?').slice(0,2)).toUpperCase();
 }
 function drawNav(){
-  let h=`<div class="mark"><div class="lg">R</div><b>Relay</b></div><div class="railnav">`;
+  let h=`<div class="mark"><div class="lg">B</div>
+    <div class="mk"><b>BMS</b><span>Release Management</span></div></div><div class="railnav">`;
   NAV.forEach(g=>{
     if(g.admin&&!isAdmin())return;
     if(g.adminOrPerm&&!hasPerm(g.adminOrPerm))return;
@@ -1037,6 +1119,9 @@ const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'
  accts:['User accounts','Create developer/user accounts and control what each one can access.']};
 
 function draw(){
+  /* draw() only ever runs for a signed-in session, so leaving auth mode
+     here guarantees the shell comes back after a successful login. */
+  document.body.classList.remove('auth');
   drawNav();
   document.getElementById('crumb').textContent=
     (NAV.find(g=>g.items.some(i=>i.k===view))||{g:'Overview'}).g;
@@ -1319,7 +1404,7 @@ function helpCard(){
       <div>
         <div style="font-family:var(--d);font-weight:700;font-size:15px;margin-bottom:6px">What is this page?</div>
         <div style="color:var(--ink2);font-size:13.5px;line-height:1.7">
-          Relay tracks each change (a "release") as it moves through steps: Grooming → Testing → Dev →
+          BMS Release Management tracks each change (a "release") as it moves through steps: Grooming → Testing → Dev →
           <b>Business approval</b> → <b>Production</b> → Done. The two bold steps need someone to click Approve
           before the release can continue. The left menu: <b>Overview</b> is your day-to-day work,
           <b>Messages</b> is everything sent or logged, <b>Settings</b> is who's who and how approvals are set up.
