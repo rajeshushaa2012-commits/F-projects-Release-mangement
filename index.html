@@ -29,6 +29,13 @@
   --btn:var(--navy);
   --sh:0 1px 2px rgba(15,19,24,.04), 0 2px 6px rgba(15,19,24,.05);
   --sh2:0 4px 16px rgba(15,19,24,.09);
+
+  /* Dark navy sidebar — a distinct surface from the light content area,
+     the single biggest visual cue that this is a designed product shell
+     rather than default-styled markup. */
+  --rail-bg:#122744; --rail-bg2:#0D1E38; --rail-ink:#E9EFF7; --rail-ink2:#8FA3BE;
+  --rail-hover:rgba(255,255,255,.06); --rail-active-bg:rgba(20,163,177,.16);
+  --rail-border:rgba(255,255,255,.09);
   --d:"Inter Tight",system-ui,sans-serif;
   --b:"Inter",system-ui,sans-serif;
   --m:"JetBrains Mono",ui-monospace,monospace;
@@ -42,42 +49,44 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .mono,.mn{font-family:var(--m);font-variant-numeric:tabular-nums}
 
 /* ── shell ─────────────────────────────── */
-.shell{display:grid;grid-template-columns:252px 1fr;min-height:100vh}
-.rail{background:var(--card);border-right:1px solid var(--line);position:sticky;top:0;height:100vh;
-  display:flex;flex-direction:column;padding:18px 0 0}
+.shell{display:grid;grid-template-columns:256px 1fr;min-height:100vh}
+.rail{background:linear-gradient(185deg,var(--rail-bg),var(--rail-bg2));border-right:1px solid var(--rail-border);
+  position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:18px 0 0;
+  box-shadow:2px 0 14px rgba(6,12,24,.18)}
 .railnav{flex:1;overflow-y:auto;padding-bottom:14px}
-.mark{padding:2px 20px 20px;display:flex;align-items:center;gap:10px}
-.mark .lg{width:28px;height:28px;border-radius:8px;background:linear-gradient(155deg,var(--navy),var(--teal));
-  display:grid;place-items:center;color:#fff;font-family:var(--d);font-weight:700;font-size:14px;flex:none;
-  box-shadow:0 1px 2px rgba(15,19,24,.14)}
-.mark b{font-family:var(--d);font-size:17px;font-weight:700;letter-spacing:-.03em}
+.mark{padding:2px 20px 22px;display:flex;align-items:center;gap:10px}
+.mark .lg{width:30px;height:30px;border-radius:9px;background:linear-gradient(155deg,var(--teal),#0a5a63);
+  display:grid;place-items:center;color:#fff;font-family:var(--d);font-weight:700;font-size:14.5px;flex:none;
+  box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.mark b{font-family:var(--d);font-size:17px;font-weight:700;letter-spacing:-.03em;color:var(--rail-ink)}
 .ngrp{padding:18px 20px 8px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
-  text-transform:uppercase;color:var(--mut2)}
+  text-transform:uppercase;color:var(--rail-ink2);opacity:.75}
 .ngrp:first-child{padding-top:4px}
 .ni{position:relative;display:flex;align-items:center;gap:10px;margin:1px 10px;padding:8px 11px 8px 13px;
-  border-radius:8px;color:var(--ink2);cursor:pointer;font-size:13.5px;font-weight:450;
+  border-radius:8px;color:var(--rail-ink2);cursor:pointer;font-size:13.5px;font-weight:450;
   transition:background .13s,color .13s}
-.ni:hover{background:var(--sunk)}
-.ni .ic{display:inline-flex;width:18px;flex:none;justify-content:center;font-size:14.5px;opacity:.72;
-  transition:opacity .13s}
-.ni.on{background:var(--navy-bg);color:var(--navy);font-weight:600}
+.ni:hover{background:var(--rail-hover);color:var(--rail-ink)}
+.ni .ic{display:inline-flex;width:18px;flex:none;justify-content:center;font-size:14.5px;opacity:.8;
+  transition:opacity .13s;filter:saturate(.85)}
+.ni.on{background:var(--rail-active-bg);color:#fff;font-weight:600}
 .ni.on .ic{opacity:1}
 .ni.on::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:16px;
-  border-radius:0 3px 3px 0;background:var(--navy)}
-.ni .ct{margin-left:auto;font-family:var(--m);font-size:10.5px;font-weight:600;color:var(--mut);
-  background:var(--sunk);border-radius:20px;padding:1px 7px;line-height:1.5}
-.ni.on .ct{color:var(--navy);background:var(--navy-ln)}
-.ni .dt{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--stop);flex:none}
+  border-radius:0 3px 3px 0;background:var(--teal)}
+.ni .ct{margin-left:auto;font-family:var(--m);font-size:10.5px;font-weight:600;color:var(--rail-ink2);
+  background:rgba(255,255,255,.08);border-radius:20px;padding:1px 7px;line-height:1.5}
+.ni.on .ct{color:#fff;background:rgba(20,163,177,.4)}
+.ni .dt{margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--stop);flex:none;
+  box-shadow:0 0 0 2px rgba(194,59,46,.25)}
 
 /* ── sidebar footer / account area ─────── */
-.railfoot{border-top:1px solid var(--line);padding:12px 14px;flex:none}
+.railfoot{border-top:1px solid var(--rail-border);padding:12px 14px;flex:none}
 .acct{display:flex;align-items:center;gap:10px;padding:6px 6px;border-radius:9px;position:relative}
-.acct:hover{background:var(--sunk)}
-.acct .av{width:32px;height:32px;border-radius:50%;background:var(--navy-bg);color:var(--navy);
-  display:grid;place-items:center;font-family:var(--d);font-weight:700;font-size:13px;flex:none}
+.acct:hover{background:var(--rail-hover)}
+.acct .av{width:32px;height:32px;border-radius:50%;background:linear-gradient(155deg,var(--teal),var(--navy));
+  color:#fff;display:grid;place-items:center;font-family:var(--d);font-weight:700;font-size:13px;flex:none}
 .acct .who{min-width:0;flex:1}
-.acct .nm{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.acct .rl{font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct .nm{font-size:13px;font-weight:600;color:var(--rail-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct .rl{font-size:11.5px;color:var(--rail-ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .acct .menu{position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:var(--card);
   border:1px solid var(--line);border-radius:10px;box-shadow:var(--sh2);padding:6px;display:none;z-index:30}
 .acct .menu.on{display:block}
@@ -95,16 +104,16 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .seg button{border:0;background:transparent;font-family:var(--b);font-size:12.5px;font-weight:500;
   padding:5px 12px;border-radius:7px;color:var(--mut);cursor:pointer;transition:all .13s}
 .seg button.on{background:var(--teal);color:#fff}
-.body{padding:34px;flex:1;max-width:1320px;width:100%}
+.body{padding:34px;flex:1;max-width:1600px;width:100%}
 @media(max-width:920px){
   .shell{grid-template-columns:1fr}
   .rail{height:auto;position:static;flex-direction:row;align-items:center;gap:2px;overflow-x:auto;
-    padding:9px;border-right:0;border-bottom:1px solid var(--line)}
+    padding:9px;border-right:0;border-bottom:1px solid var(--rail-border)}
   .mark,.ngrp{display:none}
   .railnav{display:flex;overflow:visible;padding:0;flex:none}
   .ni{white-space:nowrap;margin:0}
   .ni.on::before{display:none}
-  .railfoot{border-top:0;border-left:1px solid var(--line);padding:0 0 0 10px;margin-left:6px;flex:none}
+  .railfoot{border-top:0;border-left:1px solid var(--rail-border);padding:0 0 0 10px;margin-left:6px;flex:none}
   .acct .who{display:none}
   .acct .menu{left:auto;right:0;bottom:auto;top:calc(100% + 6px);min-width:190px}
   .top{padding:0 18px}.body{padding:20px 18px}
@@ -127,6 +136,46 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .stat .n.w{color:var(--wait)}.stat .n.s{color:var(--stop)}.stat .n.g{color:var(--go)}
 .stat .h{font-size:12px;color:var(--mut2);margin-top:6px}
 
+/* ── kpi cards ─────────────────────────── */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh);
+  padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.kpi-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.kpi .ic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  font-size:16px;flex:none;background:var(--navy-bg);color:var(--navy)}
+.kpi .ic.teal{background:var(--teal-bg);color:var(--teal)}
+.kpi .ic.go{background:var(--go-bg);color:var(--go)}
+.kpi .ic.wait{background:var(--wait-bg);color:var(--wait)}
+.kpi .ic.stop{background:var(--stop-bg);color:var(--stop)}
+.kpi .l{font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--mut)}
+.kpi .n{font-family:var(--d);font-size:30px;font-weight:700;letter-spacing:-.04em;line-height:1;
+  font-variant-numeric:tabular-nums}
+.kpi .h{font-size:12px;color:var(--mut2)}
+.kpi .trend{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.kpi .trend.go{background:var(--go-bg);color:var(--go)}
+.kpi .trend.wait{background:var(--wait-bg);color:var(--wait)}
+.kpi .trend.stop{background:var(--stop-bg);color:var(--stop)}
+.kpi .trend.mut{background:var(--sunk);color:var(--mut)}
+
+/* ── charts (pure css, no js lib) ─────────── */
+.chart-row{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.donut{width:132px;height:132px;border-radius:50%;flex:none;position:relative}
+.donut .hole{position:absolute;inset:20px;border-radius:50%;background:var(--card);
+  display:flex;flex-direction:column;align-items:center;justify-content:center}
+.donut .hole b{font-family:var(--d);font-size:22px;font-weight:700;line-height:1;letter-spacing:-.03em}
+.donut .hole span{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+.legend{flex:1;min-width:160px;display:flex;flex-direction:column;gap:9px}
+.legend .row{display:flex;align-items:center;gap:9px;font-size:12.5px}
+.legend .sw{width:10px;height:10px;border-radius:3px;flex:none}
+.legend .lbl{flex:1;color:var(--ink2)}
+.legend .val{font-family:var(--d);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.hbars{display:flex;flex-direction:column;gap:12px}
+.hbar-top{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}
+.hbar-row .top .lbl{color:var(--ink2)}
+.hbar-row .top .val{font-family:var(--d);color:var(--mut);font-variant-numeric:tabular-nums}
+.hbar-row .track{background:var(--sunk);border-radius:5px;height:9px;overflow:hidden}
+.hbar-row .fill{height:100%;border-radius:5px}
+
 /* ── cards ─────────────────────────────── */
 .c{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh)}
 .c>.h{padding:15px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
@@ -136,7 +185,7 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .c>.b.flush{padding:0}
 .sec{margin-bottom:22px}
 .grid{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;align-items:start}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:stretch}
 @media(max-width:1040px){.grid,.g2{grid-template-columns:1fr}}
 
 /* ── buttons ───────────────────────────── */
@@ -144,8 +193,9 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
   border:1px solid var(--line2);background:var(--card);color:var(--ink);cursor:pointer;
   transition:all .13s;white-space:nowrap;box-shadow:0 1px 1px rgba(15,19,24,.03)}
 .bt:hover{background:var(--sunk);border-color:#B7C0CB}
-.bt.p{background:var(--btn);border-color:var(--btn);color:#fff}
-.bt.p:hover{background:var(--navy-dk);border-color:var(--navy-dk)}
+.bt:active{transform:translateY(1px)}
+.bt.p{background:var(--btn);border-color:var(--btn);color:#fff;box-shadow:0 1px 2px rgba(18,40,63,.15),0 3px 8px rgba(18,40,63,.18)}
+.bt.p:hover{background:var(--navy-dk);border-color:var(--navy-dk);box-shadow:0 2px 4px rgba(18,40,63,.2),0 4px 12px rgba(18,40,63,.24)}
 .bt.d{color:var(--stop);border-color:var(--stop-ln)}
 .bt.d:hover{background:var(--stop-bg)}
 .bt.s{padding:5px 11px;font-size:12.5px;border-radius:7px}
@@ -207,11 +257,17 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 /* ── tables ────────────────────────────── */
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--mut2);padding:11px 20px;border-bottom:1px solid var(--line);background:var(--sunk)}
-td{padding:13px 20px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:13.5px}
+  color:var(--mut2);padding:11px 20px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);background:var(--sunk)}
+td{padding:13px 20px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:middle;font-size:13.5px}
+th:last-child,td:last-child{border-right:0}
 tr:last-child td{border-bottom:0}
 tbody tr{transition:background .11s}
 tbody tr:not(.editing):hover{background:var(--sunk)}
+/* Excel-style grid variant — zebra rows so a dense 17-column sheet stays
+   easy to track horizontally, matching a real spreadsheet's banding. */
+.xgrid tbody tr:nth-child(even):not(.editing){background:var(--paper)}
+.xgrid tbody tr:nth-child(even):not(.editing):hover{background:var(--sunk)}
+.xgrid td{padding-top:11px;padding-bottom:11px}
 tbody tr.k{cursor:pointer}
 tbody tr.editing{cursor:default;background:var(--teal-bg)}
 tbody tr.editing td{padding:8px 10px}
@@ -236,10 +292,18 @@ tbody tr.editing input:focus,tbody tr.editing select:focus{outline:none;border-c
 label{display:block;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
   color:var(--mut);margin-bottom:6px}
 input,select,textarea{width:100%;font-family:var(--b);font-size:13.5px;padding:9px 12px;
-  border:1px solid var(--line2);border-radius:8px;background:var(--card);color:var(--ink)}
+  border:1px solid var(--line2);border-radius:8px;background:var(--card);color:var(--ink);
+  transition:border-color .12s,box-shadow .12s}
 textarea{font-family:var(--b);line-height:1.65;resize:vertical}
+input:hover,select:hover{border-color:var(--mut2)}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-bg)}
 input::placeholder,textarea::placeholder{color:var(--mut2)}
+/* Custom chevron replaces the OS-native select arrow so dropdowns match
+   the rest of the input system instead of looking like browser chrome. */
+select{appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235B6472' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center}
+tbody tr.editing select{padding-right:26px;background-position:right 8px center}
 .fg{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
 .er{color:var(--stop);font-size:12.5px;margin-top:6px;display:none;font-weight:500}
 .er.on{display:block}
@@ -289,10 +353,39 @@ input::placeholder,textarea::placeholder{color:var(--mut2)}
   text-transform:uppercase;letter-spacing:.08em;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--sunk)}
 .cal .dc{min-height:84px;padding:8px 9px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
 .cal .dc.o{background:var(--sunk)}
+.cal .dc.today{background:var(--navy-bg)}
 .cal .dn{font-family:var(--m);font-size:11.5px;color:var(--mut2)}
+.cal .dn.today{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+  border-radius:50%;background:var(--navy);color:#fff;font-weight:700}
 .cal .ev{font-size:11.5px;background:var(--teal-bg);color:var(--teal);border-radius:6px;padding:4px 7px;
-  margin-top:5px;font-weight:600;cursor:pointer;line-height:1.4}
+  margin-top:5px;font-weight:600;cursor:pointer;line-height:1.4;border-left:3px solid var(--teal)}
 .cal .ev:hover{background:var(--teal);color:#fff}
+.cal .ev .dv{font-weight:500;opacity:.85;font-size:10.5px}
+.cal .ev.st-appr{background:var(--wait-bg);color:var(--wait-dk,var(--wait));border-left-color:var(--wait)}
+.cal .ev.st-appr:hover{background:var(--wait);color:#fff}
+.cal .ev.st-prod{background:var(--navy-bg);color:var(--navy);border-left-color:var(--navy)}
+.cal .ev.st-prod:hover{background:var(--navy);color:#fff}
+.cal .ev.st-done{background:var(--go-bg);color:var(--go);border-left-color:var(--go)}
+.cal .ev.st-done:hover{background:var(--go);color:#fff}
+.cal-legend{display:flex;gap:16px;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--line);font-size:12px;color:var(--mut)}
+.cal-legend .row{display:flex;align-items:center;gap:6px}
+.cal-legend .sw{width:9px;height:9px;border-radius:3px}
+
+/* ── card grid (config lists: approval groups, components) ── */
+.cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-items:start}
+
+/* ── activity feed (timeline) ─────────────── */
+.feed{padding:4px 20px}
+.feed .fi{display:flex;gap:14px;padding:14px 0;position:relative}
+.feed .fi:not(:last-child)::before{content:'';position:absolute;left:5px;top:26px;bottom:-2px;width:1px;background:var(--line)}
+.feed .dot{width:11px;height:11px;border-radius:50%;background:var(--teal);flex:none;margin-top:4px;box-shadow:0 0 0 3px var(--teal-bg)}
+.feed .dot.wait{background:var(--wait);box-shadow:0 0 0 3px var(--wait-bg)}
+.feed .dot.stop{background:var(--stop);box-shadow:0 0 0 3px var(--stop-bg)}
+.feed .dot.go{background:var(--go);box-shadow:0 0 0 3px var(--go-bg)}
+.feed .fc{flex:1;min-width:0}
+.feed .ft{font-size:13.5px;color:var(--ink);font-weight:500}
+.feed .fm{font-size:12px;color:var(--mut);margin-top:3px}
+.feed .fw{font-size:11px;color:var(--mut2);white-space:nowrap;flex:none;padding-top:2px;font-family:var(--m)}
 </style>
 </head>
 <body>
@@ -384,12 +477,12 @@ let tmpl=[];
 let conflicts=[]; const CF=id=>conflicts.find(c=>c.id===id);
 
 /* ═══ conflict tracker → project tracker ═
-   Rebuilt to match Project Tracker_2026.xlsx exactly: 18 columns per row
-   (Sl.no is a computed row number, not stored data — the other 17 map
-   1:1 to CF_FIELDS below), organized into project-wise tabs using the
-   workbook's own sheet names. No conflict-specific fields (Severity,
-   Object Type, Resolution, etc.) — those belonged to an earlier, now
-   discarded design. */
+   Matches Project Tracker_2026.xlsx exactly: 18 columns per row (Sl.no is
+   a computed row number, not stored data — the other 17 map 1:1 to
+   CF_FIELDS below), organized into project-wise tabs using the workbook's
+   own sheet names. No conflict-specific fields (Severity, Object Type,
+   Resolution, etc.) — this is the Project Tracker structure, not a
+   conflict-specific redesign of it. */
 /* Project tabs — the exact sheet names from Project Tracker_2026.xlsx,
    spelling/capitalization preserved as-is (e.g. "Ar Finance Extn"). Each
    row belongs to exactly one project; unlike Release Management's tabs,
@@ -400,7 +493,9 @@ let conflictProject=PROJECT_NAMES[0];
 let editingCflId=null, draftConflict=null;
 function setConflictTab(name){conflictProject=name;cflt.page=1;editingCflId=null;draftConflict=null;draw()}
 /* The 17 stored columns, exact order — Sl.no (row position) is rendered
-   separately and is not part of this list. */
+   separately and is not part of this list. Date-typed columns get a
+   native date picker in the editor; Release Month gets a native month
+   picker (year+month only, no day) and displays as "Jun-26". */
 const CF_FIELDS=[
  {h:'Wave',key:'wave',w:110},
  {h:'Feature#',key:'feature',w:110},
@@ -422,6 +517,11 @@ const CF_FIELDS=[
 ];
 let cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',sort:'default',page:1};
 const CF_PAGE_SIZE=15;
+/* The 8 milestone-date columns, in workflow order — derived from CF_FIELDS
+   rather than duplicated, so the insights panel can never drift out of
+   sync with the actual column list. Used only for the summary cards and
+   charts below; the grid/editor still iterate CF_FIELDS directly. */
+const CF_MILESTONE_FIELDS=CF_FIELDS.filter(f=>f.type==='date');
 
 /* ═══ server sync ═══════════════════════ */
 let emailConfigured=false,emailFrom=null;
@@ -462,7 +562,7 @@ function applyState(s){
     else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
   });
   // Backfill Project Name and the 17 project-tracker fields onto rows
-  // saved under the old conflict-specific schema.
+  // saved under an earlier schema — existing values are never overwritten.
   conflicts.forEach(c=>{
     if(!PROJECT_NAMES.includes(c.project))c.project=PROJECT_NAMES[0];
     CF_FIELDS.forEach(f=>{if(c[f.key]===undefined)c[f.key]=''});
@@ -573,6 +673,18 @@ const E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const P2=n=>String(n).padStart(2,'0');
 function fdt(s){if(!s)return '—';const d=new Date(s);return `${P2(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}, ${P2(d.getHours())}:${P2(d.getMinutes())}`}
+/* Relative time for activity feeds — "5 minutes ago" close in, falling back
+   to the absolute date+time once it's more than a day old (an exact "3
+   days ago" is less useful than the actual date at that distance). */
+function fdRel(s){
+  if(!s)return '—';
+  const d=new Date(s),diffMs=Date.now()-d.getTime(),mins=Math.round(diffMs/60000);
+  if(mins<1)return'just now';
+  if(mins<60)return `${mins} minute${mins!==1?'s':''} ago`;
+  const hrs=Math.round(mins/60);
+  if(hrs<24)return `${hrs} hour${hrs!==1?'s':''} ago`;
+  return fdt(s);
+}
 function fd(s){if(!s)return '—';const d=new Date(s);return `${P2(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}`}
 /* "25-Jun-26" — matches the Project Tracker Excel's date format. Parsed
    with an explicit local-midnight time so a plain YYYY-MM-DD value (as
@@ -827,7 +939,17 @@ function vAccts(){
         <button class="bt s" onclick="toggleAccountActive(${a.id},${!a.active})">${a.active?'Deactivate':'Activate'}</button>
       </td>
     </tr>`).join(''):`<tr><td colspan="6"><div class="ept"><h4>No user accounts yet</h4><p>Add a user to get started.</p></div></td></tr>`;
-  return head('accts',`<button class="bt p" onclick="mNewAccount()">Add user</button>`)+`
+  const activeCount=accounts.filter(a=>a.active).length;
+  const adminCount=accounts.filter(a=>a.is_admin).length;
+  const relTeamCount=accounts.filter(a=>!a.is_admin&&roleForAccount(a)==='Release Team').length;
+  const devCount=accounts.filter(a=>!a.is_admin&&roleForAccount(a)==='Developer').length;
+  const summary=accountsLoaded&&accounts.length?`<div class="sec"><div class="kpis">
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Active Users</div><div class="n">${activeCount}</div></div><div class="ic go">✓</div></div><div class="h">of ${accounts.length} total accounts</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Developers</div><div class="n">${devCount}</div></div><div class="ic teal">👥</div></div><div class="h">view-only access</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Release Team</div><div class="n">${relTeamCount}</div></div><div class="ic">📦</div></div><div class="h">can edit releases &amp; conflicts</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Admins</div><div class="n">${adminCount}</div></div><div class="ic wait">🔑</div></div><div class="h">full access</div></div>
+  </div></div>`:'';
+  return head('accts',`<button class="bt p" onclick="mNewAccount()">+ Add user</button>`)+summary+`
   <div class="c"><div class="b flush"><div class="tw"><table>
     <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div></div></div>`;
@@ -973,17 +1095,39 @@ function countBy(arr,keyFn){
   arr.forEach(x=>{const k=keyFn(x);if(k==null)return;m.set(k,(m.get(k)||0)+1)});
   return[...m.entries()].sort((a,b)=>b[1]-a[1]);
 }
+/* Pure-CSS donut chart: conic-gradient wedge + legend, no chart library.
+   segments: [{label,count,color}]. Returns a .chart-row with a hollow
+   donut on the left and a color-keyed legend on the right. */
+function donutChart(segments,centerLabel){
+  const total=segments.reduce((s,x)=>s+x.count,0);
+  if(!total)return '';
+  let acc=0;
+  const stops=segments.filter(s=>s.count>0).map(s=>{
+    const from=acc/total*360;acc+=s.count;const to=acc/total*360;
+    return `${s.color} ${from}deg ${to}deg`;
+  }).join(', ');
+  return `<div class="chart-row">
+    <div class="donut" style="background:conic-gradient(${stops})"><div class="hole"><b>${total}</b><span>${E(centerLabel||'Total')}</span></div></div>
+    <div class="legend">${segments.filter(s=>s.count>0).map(s=>`
+      <div class="row"><span class="sw" style="background:${s.color}"></span>
+        <span class="lbl">${E(s.label)}</span><span class="val">${s.count}</span></div>`).join('')}
+    </div>
+  </div>`;
+}
+/* Pure-CSS horizontal bar chart. rows: [[label,count]]. */
+function hbarChart(rows,color){
+  const max=Math.max(1,...rows.map(r=>r[1]));
+  return `<div class="hbars">${rows.map(([label,count])=>`
+    <div class="hbar-row"><div class="hbar-top"><span class="lbl">${E(label)}</span><span class="val">${count}</span></div>
+      <div class="track"><div class="fill" style="width:${Math.max(4,count/max*100)}%;background:${color||'var(--teal)'}"></div></div>
+    </div>`).join('')}</div>`;
+}
 function vDash(){
   const inprog=rels.filter(r=>r.cur!=='done').length;
   const waiting=apps_.filter(a=>a.status==='open').length;
-  const uatP=apps_.filter(a=>a.status==='open'&&a.stage==='uat').length;
-  const prodP=apps_.filter(a=>a.status==='open'&&a.stage==='prod').length;
   const totalRels=rels.length;
-  const releasesInUAT=rels.filter(r=>r.cur==='uat').length;
   const scheduledForProd=rels.filter(r=>r.cur==='prod').length;
   const upcomingCount=rels.filter(r=>r.plan&&r.cur!=='done').length;
-  const trackerRows=conflicts.length;
-  const rowsByProject=countBy(conflicts,c=>c.project||'Unspecified').slice(0,9);
   const byDeveloper=countBy(rels,r=>r.owner?U(r.owner).nm:null).slice(0,8);
   const byComponent=countBy(rels,r=>C(r.comp).nm).slice(0,8);
   const att=[];
@@ -994,37 +1138,54 @@ function vDash(){
   const up=rels.filter(r=>r.plan&&r.cur!=='done').sort((a,b)=>a.plan.localeCompare(b.plan)).slice(0,5);
   const done=rels.filter(r=>r.cur==='done').slice(0,4);
 
+  const statusBuckets=[
+    {label:'In Progress',count:rels.filter(r=>['groom','test','dev'].includes(r.cur)).length,color:'var(--info)'},
+    {label:'Approval',count:rels.filter(r=>r.cur==='uat').length,color:'var(--wait)'},
+    {label:'Production',count:rels.filter(r=>r.cur==='prod').length,color:'var(--teal)'},
+    {label:'Released',count:rels.filter(r=>r.cur==='done').length,color:'var(--go)'},
+  ];
+  const teamPalette=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
+  const teamSegs=byComponent.slice(0,6).map(([label,count],i)=>({label,count,color:teamPalette[i%teamPalette.length]}));
+  const showConflicts=hasPerm('view_conflicts');
+  const projectBars=showConflicts?countBy(conflicts,c=>c.project||'Unspecified').slice(0,9):[];
+  const projectPalette=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
+  const projectSegs=projectBars.slice(0,6).map(([label,count],i)=>({label,count,color:projectPalette[i%projectPalette.length]}));
+
   return head('dash')+(authUser&&authUser.must_change_password?`<div class="sec"><div class="mt w">
     You're signed in with a temporary password. <button class="lk" onclick="go('mypw')">Change it now</button>.</div></div>`:'')+helpCard()+`
-  <div class="sec"><div class="stats">
-    <div class="stat"><div class="l">In progress</div><div class="n">${inprog}</div><div class="h">across ${comps.length} components</div></div>
-    <div class="stat"><div class="l">Awaiting approval</div><div class="n ${waiting?'w':''}">${waiting}</div><div class="h">requests open</div></div>
-    <div class="stat"><div class="l">Business approval pending</div><div class="n">${uatP}</div><div class="h">waiting on the business</div></div>
-    <div class="stat"><div class="l">Production pending</div><div class="n">${prodP}</div><div class="h">awaiting go-live decision</div></div>
-    <div class="stat"><div class="l">Needs attention</div><div class="n ${att.length?'s':'g'}">${att.length}</div><div class="h">${att.length?'flagged now':'all clear'}</div></div>
+  <div class="sec"><div class="kpis">
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Total Releases</div><div class="n">${totalRels}</div></div>
+      <div class="ic">📦</div></div><div class="h">across ${comps.length} components</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Releases in Progress</div><div class="n">${inprog}</div></div>
+      <div class="ic teal">⏳</div></div><div class="h">not yet released ${att.length?`<span class="trend wait">${att.length} need attention</span>`:`<span class="trend go">On track</span>`}</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Upcoming Releases</div><div class="n">${upcomingCount}</div></div>
+      <div class="ic">📅</div></div><div class="h">have a planned date</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Pending Approval</div><div class="n ${waiting?'w':''}">${waiting}</div></div>
+      <div class="ic wait">⚠</div></div><div class="h">${waiting?`<span class="trend wait">requests open</span>`:`<span class="trend go">None pending</span>`}</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Scheduled for Production</div><div class="n">${scheduledForProd}</div></div>
+      <div class="ic go">🚀</div></div><div class="h">at that gate now</div></div>
   </div></div>
 
-  <div class="sec"><div class="stats">
-    <div class="stat"><div class="l">Total releases</div><div class="n">${totalRels}</div><div class="h">all time</div></div>
-    <div class="stat"><div class="l">Upcoming</div><div class="n">${upcomingCount}</div><div class="h">have a planned date</div></div>
-    <div class="stat"><div class="l">In business approval</div><div class="n">${releasesInUAT}</div><div class="h">at that gate now</div></div>
-    <div class="stat"><div class="l">Scheduled for production</div><div class="n">${scheduledForProd}</div><div class="h">at that gate now</div></div>
-    <div class="stat"><div class="l">Tracker rows</div><div class="n">${trackerRows}</div><div class="h">${hasPerm('view_conflicts')?'in Conflict Tracker':'—'}</div></div>
-    <div class="stat"><div class="l">Projects tracked</div><div class="n">${PROJECT_NAMES.length}</div><div class="h">project tabs</div></div>
-  </div></div>
-
-  <div class="sec grid">
-    <div class="c"><div class="h"><h3>Releases by developer</h3></div><div class="b">
-      ${miniBarList(byDeveloper,'No releases have an assigned developer yet.')}
+  <div class="sec g2">
+    <div class="c"><div class="h"><h3>Release Status</h3></div><div class="b">
+      ${statusBuckets.some(s=>s.count)?donutChart(statusBuckets,'Releases'):`<div class="ept"><h4>No releases yet</h4><p>Status breakdown appears once releases are added.</p></div>`}
     </div></div>
-    <div>
-      <div class="c sec"><div class="h"><h3>Releases by team</h3></div><div class="b">
-        ${miniBarList(byComponent)}
-      </div></div>
-    </div>
+    <div class="c"><div class="h"><h3>Releases by Developer</h3></div><div class="b">
+      ${byDeveloper.length?hbarChart(byDeveloper,'var(--teal)'):`<p style="color:var(--mut);font-size:13px">No releases have an assigned developer yet.</p>`}
+    </div></div>
   </div>
-  ${hasPerm('view_conflicts')?`<div class="sec c"><div class="h"><h3>Conflict Tracker rows by project</h3></div><div class="b">
-    ${miniBarList(rowsByProject,'No rows recorded yet.')}
+
+  <div class="sec g2">
+    <div class="c"><div class="h"><h3>Releases by Team</h3></div><div class="b">
+      ${teamSegs.some(s=>s.count)?donutChart(teamSegs,'Releases'):`<p style="color:var(--mut);font-size:13px">No team data yet.</p>`}
+    </div></div>
+    ${showConflicts?`<div class="c"><div class="h"><h3>Project Tracker Summary</h3></div><div class="b">
+      ${projectSegs.some(s=>s.count)?donutChart(projectSegs,'Rows'):`<div class="ept"><h4>No project tracker rows yet</h4><p>Breakdown appears once rows are added.</p></div>`}
+    </div></div>`:''}
+  </div>
+
+  ${showConflicts&&projectBars.length>1?`<div class="sec c"><div class="h"><h3>Project Tracker rows by project</h3></div><div class="b">
+    ${hbarChart(projectBars,'var(--navy)')}
   </div></div>`:''}
 
   ${att.length?`<div class="sec"><div class="c"><div class="h"><h3>Immediate attention</h3>
@@ -1067,20 +1228,27 @@ function vDash(){
 }
 
 /* ═══ my pending ════════════════════════ */
+const PEND_RANK={ack:0,move:1,await:2};
 function vMine(){
   const p=pendingForMe();
   if(!p.length)return head('mine')+`<div class="c"><div class="ept">
     <h4>Nothing waiting on you</h4><p>Approvals you have requested and change alerts on your components will appear here.</p></div></div>`;
-  return head('mine')+`<div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
-  ${p.map(x=>{
+  const sorted=p.slice().sort((a,b)=>(PEND_RANK[a.k]??1)-(PEND_RANK[b.k]??1));
+  const critCount=p.filter(x=>x.k==='ack').length;
+  return head('mine')+`<div class="sec"><div class="kpis">
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Needs You</div><div class="n">${p.length}</div></div><div class="ic">⏳</div></div><div class="h">total items</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Critical</div><div class="n ${critCount?'s':''}">${critCount}</div></div><div class="ic stop">🚨</div></div><div class="h">${critCount?`<span class="trend stop">changes to acknowledge</span>`:`<span class="trend go">None</span>`}</div></div>
+  </div></div>
+  <div class="c"><div class="h"><h3>${p.length} item${p.length!==1?'s':''} need you</h3></div><div class="b flush">
+  ${sorted.map(x=>{
     if(x.k==='await'){const pend=G(x.a.grp).members.filter(m=>!x.a.dec.some(d=>d.u===m));
-      return `<div class="li"><div class="gr"><div class="t">Awaiting approval — ${E(x.r.nm)}</div>
+      return `<div class="li"><div class="gr"><div class="t">Awaiting approval — ${E(x.r.nm)} <span class="tag" style="margin-left:6px">Waiting on others</span></div>
       <div class="d">${x.r.ref} · ${SL(x.a.stage)} · requested ${fdt(x.a.on)}<br>Yet to respond: ${pend.map(m=>E(U(m).nm)).join(', ')||'none'}</div></div>
       <button class="bt s" onclick="openR('${x.r.id}')">Open</button></div>`}
-    if(x.k==='move')return `<div class="li"><div class="gr"><div class="t">Ready to move on — ${E(x.r.nm)}</div>
+    if(x.k==='move')return `<div class="li"><div class="gr"><div class="t">Ready to move on — ${E(x.r.nm)} <span class="stt s-wait" style="margin-left:6px"><i></i>Action needed</span></div>
       <div class="d">${x.r.ref} · currently ${SL(x.r.cur)}</div></div>
       <button class="bt s p" onclick="openR('${x.r.id}')">Open</button></div>`;
-    return `<div class="li hot"><div class="gr"><div class="t">${E(U(x.v.by).nm)} pulled changes on ${E(C(x.v.comp).nm)}</div>
+    return `<div class="li hot"><div class="gr"><div class="t">${E(U(x.v.by).nm)} pulled changes on ${E(C(x.v.comp).nm)} <span class="stt s-bad" style="margin-left:6px"><i></i>Critical</span></div>
       <div class="d">${fdt(x.v.on)} — take the latest before continuing</div></div>
       <button class="bt s" onclick="ack('${x.v.id}')">Acknowledge</button></div>`;
   }).join('')}</div></div>`;
@@ -1372,7 +1540,7 @@ function vRel(){
     </tbody></table></div></div></div>`;
 }
 
-/* ═══ conflict tracker ══════════════════ */
+/* ═══ conflict tracker → project tracker ═ */
 function setCF(k,v){cflt[k]=v;cflt.page=1;draw()}
 function clearCF(){cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',sort:'default',page:1};draw()}
 /* Project tabs ARE separate datasets here (unlike Release Management's
@@ -1426,6 +1594,8 @@ function vConflicts(){
   const pageStart=(cflt.page-1)*CF_PAGE_SIZE;
   const pageRows=all.slice(pageStart,pageStart+CF_PAGE_SIZE);
   const projectRows=conflicts.filter(c=>c.project===conflictProject);
+  const hasRows=projectRows.length>0;
+  const showEmptyState=!hasRows&&!showDraft;
   const uniq=key=>[...new Set(projectRows.map(c=>c[key]).filter(Boolean))].sort();
   const statusValues=uniq('currentStatus'),modeValues=uniq('modeOfRelease'),monthValues=uniq('releaseMonth');
   const cols=cfColumns();
@@ -1434,10 +1604,50 @@ function vConflicts(){
   const projTabs=`<div class="seg" style="margin-top:16px;overflow-x:auto;max-width:100%">${PROJECT_NAMES.map(p=>
     `<button style="white-space:nowrap;flex:0 0 auto" class="${p===conflictProject?'on':''}" onclick="setConflictTab('${E(p)}')">${E(p)}</button>`).join('')}</div>`;
 
-  return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
-    `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+
-    projTabs+`
-  <div class="sec c"><div class="b">
+  /* ── insights: derived only from real CF_FIELDS data, never invented.
+     "Completed" = reached the final (Prod) milestone; "Pending" = no
+     milestone started yet; everything else counts as "In progress". */
+  const completedCount=projectRows.filter(c=>c.prod).length;
+  const pendingCount=projectRows.filter(c=>!CF_MILESTONE_FIELDS.some(f=>c[f.key])).length;
+  const inProgressCount=projectRows.length-completedCount-pendingCount;
+  const todayISO=now().slice(0,10),in30ISO=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+  let upcomingCount=0;
+  projectRows.forEach(c=>CF_MILESTONE_FIELDS.forEach(f=>{if(c[f.key]&&c[f.key]>=todayISO&&c[f.key]<=in30ISO)upcomingCount++}));
+
+  const summaryCards=`<div class="sec"><div class="kpis">
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Total Rows</div><div class="n">${projectRows.length}</div></div><div class="ic">📊</div></div><div class="h">in ${E(conflictProject)}</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Completed</div><div class="n">${completedCount}</div></div><div class="ic go">✓</div></div><div class="h">reached Prod</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">In Progress</div><div class="n">${inProgressCount}</div></div><div class="ic teal">⏳</div></div><div class="h">started, not yet live</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Pending</div><div class="n">${pendingCount}</div></div><div class="ic wait">⏱</div></div><div class="h">no milestones started</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Upcoming Milestones</div><div class="n">${upcomingCount}</div></div><div class="ic">📅</div></div><div class="h">due in the next 30 days</div></div>
+  </div></div>`;
+
+  const milestoneBars=CF_MILESTONE_FIELDS.map(f=>[f.h,projectRows.filter(c=>c[f.key]).length]);
+  const statusPalette=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
+  const statusSegs=countBy(projectRows,c=>c.currentStatus||'Not set').slice(0,6)
+    .map(([label,count],i)=>({label,count,color:statusPalette[i%statusPalette.length]}));
+  const monthKeys=[...new Set(projectRows.map(c=>c.releaseMonth).filter(Boolean))].sort();
+  const monthBars=monthKeys.map(m=>[fdMonth(m),projectRows.filter(c=>c.releaseMonth===m).length]);
+  const devBars=countBy(projectRows,c=>c.developers||'Unassigned').slice(0,8);
+
+  const charts=`<div class="sec g2">
+    <div class="c"><div class="h"><h3>Milestone Progress</h3></div><div class="b">
+      ${milestoneBars.some(b=>b[1])?hbarChart(milestoneBars,'var(--teal)'):`<p style="color:var(--mut);font-size:13px">No milestone dates recorded yet.</p>`}
+    </div></div>
+    <div class="c"><div class="h"><h3>Current Status</h3></div><div class="b">
+      ${statusSegs.some(s=>s.count)?donutChart(statusSegs,'Rows'):`<p style="color:var(--mut);font-size:13px">No status values recorded yet.</p>`}
+    </div></div>
+  </div>
+  <div class="sec g2">
+    <div class="c"><div class="h"><h3>Release Month Overview</h3></div><div class="b">
+      ${monthBars.length?hbarChart(monthBars,'var(--navy)'):`<p style="color:var(--mut);font-size:13px">No release months recorded yet.</p>`}
+    </div></div>
+    <div class="c"><div class="h"><h3>Developer Workload</h3></div><div class="b">
+      ${devBars.length?hbarChart(devBars,'var(--info)'):`<p style="color:var(--mut);font-size:13px">No developers recorded yet.</p>`}
+    </div></div>
+  </div>`;
+
+  const filterToolbar=`<div class="sec c"><div class="b">
     <div class="fg">
       <div><label>Search</label><input value="${E(cflt.q)}" placeholder="Wave, Feature#, Story#, description, developers"
         oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(draw,220)"></div>
@@ -1456,10 +1666,10 @@ function vConflicts(){
         <option value="releaseMonth" ${cflt.sort==='releaseMonth'?'selected':''}>Release Month</option></select></div>
     </div>
     <div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>
-  </div></div>
+  </div></div>`;
 
-  <div class="c"><div class="b flush">${(pageRows.length||showDraft)?`
-    <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
+  const gridCard=`<div class="c"><div class="b flush">${(pageRows.length||showDraft)?`
+    <div style="overflow:auto;max-height:70vh"><table class="xgrid" style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
     <thead><tr><th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${SLNO_W}px">Sl.no</th>
       ${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
       ${showActionCol?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
@@ -1485,18 +1695,40 @@ function vConflicts(){
         <button class="bt s" ${cflt.page>=totalPages?'disabled':''} onclick="cflt.page++;draw()">Next →</button>
       </div>
     </div>`
-    :projectRows.length?`<div class="ept"><h4>No conflicts found</h4><p>No records match the current filters.</p>
-      <button class="bt s" style="margin-top:14px" onclick="clearCF()">Clear filters</button></div>`
-    :`<div class="ept"><h4>No rows yet</h4><p>${canCreateHere?'Add a row to get started.':'Nothing has been added to this project yet.'}</p></div>`}
+    :`<div class="ept"><h4>No rows found</h4><p>No records match the current filters.</p>
+      <button class="bt s" style="margin-top:14px" onclick="clearCF()">Clear filters</button></div>`}
   </div></div>`;
+
+  const upcomingList=[];
+  projectRows.forEach(c=>CF_MILESTONE_FIELDS.forEach(f=>{if(c[f.key]&&c[f.key]>=todayISO)upcomingList.push({date:c[f.key],label:f.h,row:c})}));
+  upcomingList.sort((a,b)=>a.date.localeCompare(b.date));
+  const upcomingPanel=hasRows?`<div class="c"><div class="h"><h3>Upcoming Milestones</h3></div><div class="b flush">
+    ${upcomingList.length?upcomingList.slice(0,6).map(u=>`<div class="li"><div class="gr">
+      <div class="t">${E(u.label)} — ${E(u.row.wave||u.row.feature||u.row.story||u.row.id)}</div>
+      <div class="d">${E(u.row.description||'')}</div></div>
+      <div class="mono" style="font-size:11.5px;color:var(--mut);white-space:nowrap">${fdShort(u.date)}</div></div>`).join('')
+    :'<div class="ept"><p>No upcoming milestone dates in this project.</p></div>'}
+  </div></div>`:'';
+
+  if(showEmptyState){
+    return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
+      `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+
+      projTabs+`<div class="sec"><div class="c"><div class="ept" style="padding:64px 24px">
+        <h4>No tracker records yet</h4>
+        <p>Add your first tracker row or import your Project Tracker Excel data to see project insights.</p>
+        ${canCreateHere?`<button class="bt p" style="margin-top:16px" onclick="mNewConflictRow()">+ Add Row</button>`:''}
+      </div></div></div>`;
+  }
+
+  return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
+    `<button class="bt" onclick="exportConflictsCsv()">Export</button>`)+
+    projTabs+(hasRows?summaryCards+charts:'')+filterToolbar+`<div class="sec">${gridCard}</div>`+upcomingPanel;
 }
-/* ═══ Excel-style inline conflict editing ═
+/* ═══ Excel-style inline row editing ═══════
    Same pattern as Release Management's inline row editing — no popup.
-   "+ Add Conflict" inserts a blank draft row into the current project's
-   grid; an existing row's "Edit" button turns that row's cells into
-   inputs in place. Attachments stay a live action in their own column
-   regardless of edit mode (uploading commits immediately via its own
-   small file-picker modal, not part of the row's Save). */
+   "+ Add Row" inserts a blank draft row into the current project's grid;
+   an existing row's "Edit" button turns that row's cells into inputs in
+   place. */
 function mNewConflictRow(){
   if(draftConflict)return;
   draftConflict={};
@@ -1562,24 +1794,35 @@ function exportConflictsCsv(){
 }
 
 /* ═══ calendar ══════════════════════════ */
+function evStatusCls(cur){return cur==='uat'?'st-appr':cur==='prod'?'st-prod':cur==='done'?'st-done':''}
 function vCal(){
   const y=calMonth.getFullYear(),m=calMonth.getMonth();
   const start=(new Date(y,m,1).getDay()+6)%7,days=new Date(y,m+1,0).getDate();
   const cells=[];for(let i=0;i<start;i++)cells.push(null);
   for(let d=1;d<=days;d++)cells.push(d);while(cells.length%7)cells.push(null);
   const key=d=>`${y}-${P2(m+1)}-${P2(d)}`;
+  const today=new Date(),todayKey=`${today.getFullYear()}-${P2(today.getMonth()+1)}-${P2(today.getDate())}`;
   const MF=['January','February','March','April','May','June','July','August','September','October','November','December'];
   return head('cal')+`<div class="c"><div class="h"><h3>${MF[m]} ${y}</h3>
     <div class="r"><button class="bt s" onclick="calMonth=new Date(${y},${m-1},1);draw()">←</button>
+    <button class="bt s" onclick="calMonth=new Date();draw()">Today</button>
     <button class="bt s" onclick="calMonth=new Date(${y},${m+1},1);draw()">→</button></div></div>
     <div class="b flush"><div class="cal">
       ${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>`<div class="dh">${d}</div>`).join('')}
       ${cells.map(d=>{
         if(!d)return `<div class="dc o"></div>`;
+        const isToday=key(d)===todayKey;
         const evs=rels.filter(r=>r.plan===key(d));
-        return `<div class="dc"><div class="dn">${P2(d)}</div>
-          ${evs.map(r=>`<div class="ev" onclick="openR('${r.id}')">${r.ref}<br>${E(C(r.comp).nm)}</div>`).join('')}</div>`;
+        return `<div class="dc ${isToday?'today':''}"><div class="dn ${isToday?'today':''}">${P2(d)}</div>
+          ${evs.map(r=>`<div class="ev ${evStatusCls(r.cur)}" onclick="openR('${r.id}')">${r.ref}
+            <div class="dv">${E(C(r.comp).nm)} · ${E(U(r.owner).nm)}</div></div>`).join('')}</div>`;
       }).join('')}
+    </div>
+    <div class="cal-legend">
+      <div class="row"><span class="sw" style="background:var(--teal)"></span>In progress</div>
+      <div class="row"><span class="sw" style="background:var(--wait)"></span>Business approval</div>
+      <div class="row"><span class="sw" style="background:var(--navy)"></span>Production</div>
+      <div class="row"><span class="sw" style="background:var(--go)"></span>Released</div>
     </div></div></div>`;
 }
 
@@ -1587,18 +1830,17 @@ function vCal(){
 function vChg(){
   return head('chg',canEdit()?`<button class="bt p" onclick="mPull()">Record a pull</button>`:'')+`
   <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
-  <div class="c"><div class="b flush">${acts.length?
+  <div class="c"><div class="b flush"><div class="feed">${acts.length?
     acts.map(v=>{
       const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
       const hot=others.includes(me)&&!v.ack.includes(me);
-      return `<div class="li ${hot?'hot':''}"><div class="gr">
-        <div class="t">${E(U(v.by).nm)} — ${E(v.act.toLowerCase())} on ${E(C(v.comp).nm)}</div>
-        <div class="d">${fdt(v.on)} · notified ${others.length} owner${others.length!==1?'s':''}: ${others.map(o=>E(U(o).nm)).join(', ')||'none'}</div>
-        <div class="d">Acknowledged by ${v.ack.length?v.ack.map(o=>E(U(o).nm)).join(', '):'no one yet'}</div>
-      </div>${hot?`<button class="bt s" onclick="ack('${v.id}')">Acknowledge</button>`:''}</div>`;
+      return `<div class="fi"><div class="dot ${hot?'stop':'go'}"></div><div class="fc">
+        <div class="ft">${E(U(v.by).nm)} ${E(v.act.toLowerCase())} on ${E(C(v.comp).nm)}${hot?` <span class="stt s-bad" style="margin-left:4px"><i></i>Needs ack</span>`:''}</div>
+        <div class="fm">Notified: ${others.map(o=>E(U(o).nm)).join(', ')||'none'} · Acknowledged: ${v.ack.length?v.ack.map(o=>E(U(o).nm)).join(', '):'no one yet'}</div>
+      </div><div class="fw">${fdRel(v.on)}</div>${hot?`<button class="bt s" style="margin-left:10px" onclick="ack('${v.id}')">Acknowledge</button>`:''}</div>`;
     }).join('')
     :'<div class="ept"><h4>No change activity yet</h4><p>Pulls and applied changes will be logged here.</p></div>'}
-  </div></div>`;
+  </div></div></div>`;
 }
 
 /* ═══ compose email ═════════════════════ */
@@ -1606,7 +1848,7 @@ function vMail(){
   return head('mail')+`
   ${!emailConfigured?`<div class="sec"><div class="mt w">Email sending is not configured on the server yet. Set <b>RELAY_SMTP_USER</b> (a Gmail address) and <b>RELAY_SMTP_PASS</b> (its Gmail App Password) as environment variables on the server, then restart it.</div></div>`
     :`<div class="sec"><div class="mt">Sending as ${E(emailFrom)}.</div></div>`}
-  <div class="c"><div class="b">
+  <div class="c" style="max-width:760px"><div class="b">
     <div class="fg" style="margin-bottom:16px">
       <div><label>To</label><input id="mt" placeholder="name@gmail.com, other@gmail.com"></div>
       <div><label>Or pick a user</label><select id="mtu" onchange="if(this.value)document.getElementById('mt').value=U(this.value).em">
@@ -1637,40 +1879,37 @@ async function sendManual(){
 /* ═══ notifications ═════════════════════ */
 function vNote(){
   return head('note',`<button class="bt" onclick="runCycle()">Run reminder cycle</button>`)+`
-  <div class="c"><div class="b flush">${notifs.length?`<div class="tw"><table>
-    <thead><tr><th>Sent</th><th>Type</th><th>Subject</th><th>Recipients</th><th>Status</th></tr></thead>
-    <tbody>${notifs.map(n=>`<tr>
-      <td class="mono" style="font-size:12px;white-space:nowrap;color:var(--mut)">${fdt(n.on)}</td>
-      <td><span class="tag">${E(n.ty)}</span></td>
-      <td class="tt" style="font-weight:500">${E(n.sub)}</td>
-      <td class="mono" style="font-size:11.5px;color:var(--mut)">${n.to.map(t=>E(U(t).em)).join('<br>')}</td>
-      <td>${n.ok?'<span class="stt s-ok"><i></i>Sent</span>':'<span class="stt s-bad"><i></i>Retried</span>'}</td>
-    </tr>`).join('')}</tbody></table></div>`
-    :'<div class="ept"><h4>No notifications yet</h4><p>Every message the application sends will show up here.</p></div>'}</div></div>`;
+  <div class="c"><div class="b flush"><div class="feed">${notifs.length?
+    notifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
+      <div class="ft">${E(n.sub)} <span class="tag" style="margin-left:4px">${E(n.ty)}</span></div>
+      <div class="fm">To ${n.to.length} recipient${n.to.length!==1?'s':''}: ${n.to.map(t=>E(U(t).em)).join(', ')} ${n.ok?'<span class="stt s-ok" style="margin-left:4px"><i></i>Sent</span>':'<span class="stt s-bad" style="margin-left:4px"><i></i>Retried</span>'}</div>
+    </div><div class="fw">${fdRel(n.on)}</div></div>`).join('')
+    :'<div class="ept"><h4>No notifications yet</h4><p>Every message the application sends will show up here.</p></div>'}</div></div></div>`;
 }
 
 /* ═══ audit ═════════════════════════════ */
 function vAud(){
   return head('aud',`<button class="bt" onclick="exportCsv()">Export</button>`)+`
   <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
-  <div class="c"><div class="b flush">${audit.length?`<div class="tw"><table>
-    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Release</th><th>Component</th><th>Transition</th><th>Reason</th></tr></thead>
-    <tbody>${audit.map(a=>`<tr>
-      <td class="mono" style="font-size:12px;white-space:nowrap;color:var(--mut)">${fdt(a.on)}</td>
-      <td class="tt" style="font-weight:500">${E(U(a.ac).nm)}</td><td>${E(a.act)}</td>
-      <td class="mono" style="font-size:11.5px">${a.rel?R(a.rel).ref:'—'}</td>
-      <td>${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'—')}</td>
-      <td style="color:var(--mut);font-size:12.5px">${a.prev==='—'?'—':`${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`}</td>
-      <td style="color:var(--stop);font-size:12.5px">${E(a.rs||'')||'<span style="color:var(--mut2)">—</span>'}</td></tr>`).join('')}
-    </tbody></table></div>`
-    :'<div class="ept"><h4>No audit entries yet</h4><p>Every action taken in the application will be recorded here.</p></div>'}</div></div>`;
+  <div class="c"><div class="b flush"><div class="feed">${audit.length?
+    audit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
+      <div class="ft">${E(U(a.ac).nm)} — ${E(a.act)}${a.rel?` <span class="tag" style="margin-left:4px">${E(R(a.rel).ref)}</span>`:''}</div>
+      <div class="fm">${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'')}${a.prev!=='—'?` · ${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`:''}${a.rs?` · <span style="color:var(--stop)">${E(a.rs)}</span>`:''}</div>
+    </div><div class="fw">${fdRel(a.on)}</div></div>`).join('')
+    :'<div class="ept"><h4>No audit entries yet</h4><p>Every action taken in the application will be recorded here.</p></div>'}</div></div></div>`;
 }
 
 /* ═══ admin ═════════════════════════════ */
 function vUsr(){
-  return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`)+`
+  const activeCount=users.filter(u=>u.active).length;
+  const summary=users.length?`<div class="sec"><div class="kpis">
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Total Users</div><div class="n">${users.length}</div></div><div class="ic">👤</div></div><div class="h">in the directory</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Active</div><div class="n">${activeCount}</div></div><div class="ic go">✓</div></div><div class="h">receiving alerts</div></div>
+    <div class="kpi"><div class="kpi-top"><div><div class="l">Inactive</div><div class="n">${users.length-activeCount}</div></div><div class="ic">⏸</div></div><div class="h">excluded from new mail</div></div>
+  </div></div>`:'';
+  return head('usr',`<button class="bt p" onclick="mUser()">Add user</button>`)+summary+`
   <div class="sec"><div class="mt">Inactive users are excluded from new approval and notification emails but remain visible in existing history.</div></div>
-  <div class="c"><div class="b flush">${users.length?`<div class="tw"><table>
+  <div class="c"><div class="b flush">${users.length?`<div class="tw"><table class="xgrid">
     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Responsibility</th><th>Components</th><th>Status</th><th></th></tr></thead>
     <tbody>${users.map(u=>`<tr>
       <td class="tt">${E(u.nm)}</td><td class="mono" style="font-size:11.5px;color:var(--mut)">${E(u.em)}</td>
@@ -1685,35 +1924,40 @@ function vUsr(){
     :'<div class="ept"><h4>No users yet</h4><p>Add a user to start routing approvals and alerts.</p></div>'}</div></div>`;
 }
 function vGrp(){
-  return head('grp')+`<div class="c"><div class="b flush">${groups.length?
-    groups.map(g=>`<div class="li" style="align-items:flex-start"><div class="gr">
-      <div class="t">${E(g.nm)}</div>
-      <div class="d">Gate: ${SL(g.stage)} · escalates to ${E(U(g.esc).nm)} · reminder every ${g.remH}h, escalate after ${g.escH}h</div>
-      <div class="chips" style="margin-top:9px">${g.members.map(m=>`<span class="chip ${U(m).active?'':'off'}">
-        <span class="n">${E(U(m).nm)}</span><span class="e">${E(U(m).em)}</span></span>`).join('')}</div>
-    </div><div style="width:160px"><label>Condition</label>
-      <select onchange="setCond('${g.id}',this.value)">
-        <option value="any" ${g.cond==='any'?'selected':''}>Any one approver</option>
-        <option value="all" ${g.cond==='all'?'selected':''}>All approvers</option>
-      </select></div></div>`).join('')
-    :'<div class="ept"><h4>No approval groups yet</h4><p>Approval groups decide who signs off at each gate.</p></div>'}
-  </div></div>`;
+  if(!groups.length)return head('grp')+`<div class="c"><div class="ept"><h4>No approval groups yet</h4><p>Approval groups decide who signs off at each gate.</p></div></div>`;
+  return head('grp')+`<div class="sec"><div class="mt">${groups.length} approval group${groups.length!==1?'s':''} configured, one per gate.</div></div>
+  <div class="cards-grid">
+    ${groups.map(g=>`<div class="c"><div class="h"><h3>${E(g.nm)}</h3>
+      <div class="r"><span class="tag">${SL(g.stage)}</span></div></div>
+      <div class="b">
+        <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Escalates to ${E(U(g.esc).nm)} · reminder every ${g.remH}h, escalate after ${g.escH}h</div>
+        <div class="chips">${g.members.map(m=>`<span class="chip ${U(m).active?'':'off'}">
+          <span class="n">${E(U(m).nm)}</span><span class="e">${E(U(m).em)}</span></span>`).join('')}</div>
+        <div style="margin-top:16px"><label>Condition</label>
+          <select onchange="setCond('${g.id}',this.value)">
+            <option value="any" ${g.cond==='any'?'selected':''}>Any one approver</option>
+            <option value="all" ${g.cond==='all'?'selected':''}>All approvers</option>
+          </select></div>
+      </div></div>`).join('')}
+  </div>`;
 }
 function vCmp(){
-  return head('cmp')+`<div class="c"><div class="b flush">${comps.length?
-    comps.map(c=>`<div class="li" style="align-items:flex-start"><div class="gr">
-      <div class="t">${E(c.nm)}</div>
-      <div class="d">${rels.filter(r=>r.comp===c.id).length} releases tracked · change alerts go to the active owners below, excluding whoever made the change</div>
-      <div class="chips" style="margin-top:9px">${c.owners.map(o=>`<span class="chip ${U(o).active?'':'off'}">
-        <span class="n">${E(U(o).nm)}</span></span>`).join('')}</div>
-    </div></div>`).join('')
-    :'<div class="ept"><h4>No components yet</h4><p>Components group releases and drive who gets change alerts.</p></div>'}
-  </div></div>`;
+  if(!comps.length)return head('cmp')+`<div class="c"><div class="ept"><h4>No components yet</h4><p>Components group releases and drive who gets change alerts.</p></div></div>`;
+  return head('cmp')+`<div class="sec"><div class="mt">${comps.length} component${comps.length!==1?'s':''} tracked across ${rels.length} release${rels.length!==1?'s':''}.</div></div>
+  <div class="cards-grid">
+    ${comps.map(c=>`<div class="c"><div class="h"><h3>${E(c.nm)}</h3>
+      <div class="r"><span class="tag">${rels.filter(r=>r.comp===c.id).length} release${rels.filter(r=>r.comp===c.id).length!==1?'s':''}</span></div></div>
+      <div class="b">
+        <div style="color:var(--mut);font-size:12.5px;margin-bottom:12px">Change alerts go to the active owners below, excluding whoever made the change</div>
+        <div class="chips">${c.owners.map(o=>`<span class="chip ${U(o).active?'':'off'}">
+          <span class="n">${E(U(o).nm)}</span></span>`).join('')}</div>
+      </div></div>`).join('')}
+  </div>`;
 }
 function vTpl(){
   return head('tpl')+`
   <div class="sec"><div class="mt">Fields in braces are replaced when a message is generated. Nothing beyond these fields is ever included in outbound email.</div></div>
-  ${tmpl.map((t,i)=>`<div class="c sec"><div class="h"><h3>${E(t.ev)}</h3></div><div class="b">
+  ${tmpl.map((t,i)=>`<div class="c sec" style="max-width:820px"><div class="h"><h3>${E(t.ev)}</h3></div><div class="b">
     <div style="margin-bottom:14px"><label>Subject</label><input value="${E(t.sub)}" oninput="tmpl[${i}].sub=this.value"></div>
     <div><label>Body</label><textarea rows="8" style="font-family:var(--m);font-size:12.5px" oninput="tmpl[${i}].bd=this.value">${E(t.bd)}</textarea></div>
     <button class="bt s" style="margin-top:12px" onclick="persist();toast('Template saved')">Save template</button>
