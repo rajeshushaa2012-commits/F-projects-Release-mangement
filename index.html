@@ -181,8 +181,18 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 .c>.h{padding:15px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
 .c>.h h3{font-size:14.5px;font-weight:600;letter-spacing:-.015em}
 .c>.h .r{margin-left:auto;display:flex;gap:8px;align-items:center}
-.c>.b{padding:20px}
+.c{display:flex;flex-direction:column}
+.c>.b{padding:20px;flex:1}
 .c>.b.flush{padding:0}
+/* Empty state for a chart/insight card — fills whatever height the card
+   stretched to (instead of a short message floating at the top with a
+   dead gap below it) and gives it a themed icon rather than bare text. */
+.chart-empty{height:100%;min-height:150px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;gap:11px;padding:20px}
+.chart-empty .ic{width:46px;height:46px;border-radius:13px;background:var(--sunk);
+  color:var(--mut2);display:flex;align-items:center;justify-content:center;font-size:21px}
+.chart-empty h4{font-family:var(--d);font-size:14.5px;font-weight:600;color:var(--ink2)}
+.chart-empty p{font-size:12.5px;color:var(--mut);max-width:30ch;line-height:1.5}
 .sec{margin-bottom:22px}
 .grid{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;align-items:start}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:stretch}
@@ -1115,6 +1125,10 @@ function donutChart(segments,centerLabel){
   </div>`;
 }
 /* Pure-CSS horizontal bar chart. rows: [[label,count]]. */
+/* Shared empty-state block for chart/insight cards — see .chart-empty. */
+function chartEmpty(icon,title,msg){
+  return `<div class="chart-empty"><div class="ic">${icon}</div><h4>${E(title)}</h4><p>${E(msg)}</p></div>`;
+}
 function hbarChart(rows,color){
   const max=Math.max(1,...rows.map(r=>r[1]));
   return `<div class="hbars">${rows.map(([label,count])=>`
@@ -1168,19 +1182,19 @@ function vDash(){
 
   <div class="sec g2">
     <div class="c"><div class="h"><h3>Release Status</h3></div><div class="b">
-      ${statusBuckets.some(s=>s.count)?donutChart(statusBuckets,'Releases'):`<div class="ept"><h4>No releases yet</h4><p>Status breakdown appears once releases are added.</p></div>`}
+      ${statusBuckets.some(s=>s.count)?donutChart(statusBuckets,'Releases'):chartEmpty('📊','No releases yet','Status breakdown appears once releases are added.')}
     </div></div>
     <div class="c"><div class="h"><h3>Releases by Developer</h3></div><div class="b">
-      ${byDeveloper.length?hbarChart(byDeveloper,'var(--teal)'):`<p style="color:var(--mut);font-size:13px">No releases have an assigned developer yet.</p>`}
+      ${byDeveloper.length?hbarChart(byDeveloper,'var(--teal)'):chartEmpty('👤','No developer data yet','Releases will appear here once a developer is assigned.')}
     </div></div>
   </div>
 
   <div class="sec g2">
     <div class="c"><div class="h"><h3>Releases by Team</h3></div><div class="b">
-      ${teamSegs.some(s=>s.count)?donutChart(teamSegs,'Releases'):`<p style="color:var(--mut);font-size:13px">No team data yet.</p>`}
+      ${teamSegs.some(s=>s.count)?donutChart(teamSegs,'Releases'):chartEmpty('🧩','No team data yet','Breakdown appears once releases are linked to a team.')}
     </div></div>
     ${showConflicts?`<div class="c"><div class="h"><h3>Project Tracker Summary</h3></div><div class="b">
-      ${projectSegs.some(s=>s.count)?donutChart(projectSegs,'Rows'):`<div class="ept"><h4>No project tracker rows yet</h4><p>Breakdown appears once rows are added.</p></div>`}
+      ${projectSegs.some(s=>s.count)?donutChart(projectSegs,'Rows'):chartEmpty('🗂','No project tracker rows yet','Breakdown appears once rows are added.')}
     </div></div>`:''}
   </div>
 
@@ -1632,18 +1646,18 @@ function vConflicts(){
 
   const charts=`<div class="sec g2">
     <div class="c"><div class="h"><h3>Milestone Progress</h3></div><div class="b">
-      ${milestoneBars.some(b=>b[1])?hbarChart(milestoneBars,'var(--teal)'):`<p style="color:var(--mut);font-size:13px">No milestone dates recorded yet.</p>`}
+      ${milestoneBars.some(b=>b[1])?hbarChart(milestoneBars,'var(--teal)'):chartEmpty('📅','No milestone dates yet','Progress appears once SDD Review through Prod dates are filled in.')}
     </div></div>
     <div class="c"><div class="h"><h3>Current Status</h3></div><div class="b">
-      ${statusSegs.some(s=>s.count)?donutChart(statusSegs,'Rows'):`<p style="color:var(--mut);font-size:13px">No status values recorded yet.</p>`}
+      ${statusSegs.some(s=>s.count)?donutChart(statusSegs,'Rows'):chartEmpty('📶','No status values yet','Breakdown appears once Current Status is filled in.')}
     </div></div>
   </div>
   <div class="sec g2">
     <div class="c"><div class="h"><h3>Release Month Overview</h3></div><div class="b">
-      ${monthBars.length?hbarChart(monthBars,'var(--navy)'):`<p style="color:var(--mut);font-size:13px">No release months recorded yet.</p>`}
+      ${monthBars.length?hbarChart(monthBars,'var(--navy)'):chartEmpty('🗓','No release months yet','Overview appears once Release Month is filled in.')}
     </div></div>
     <div class="c"><div class="h"><h3>Developer Workload</h3></div><div class="b">
-      ${devBars.length?hbarChart(devBars,'var(--info)'):`<p style="color:var(--mut);font-size:13px">No developers recorded yet.</p>`}
+      ${devBars.length?hbarChart(devBars,'var(--info)'):chartEmpty('👤','No developers yet','Workload appears once rows have a developer assigned.')}
     </div></div>
   </div>`;
 
