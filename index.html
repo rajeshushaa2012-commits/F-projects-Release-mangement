@@ -339,6 +339,18 @@ h1,h2,h3,h4{font-family:var(--d);letter-spacing:-.022em}
 /* ── compact stat rows — the shared vocabulary for context panels ── */
 .srow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
 .srow:last-child{border-bottom:0}
+/* Clickable variant: the whole row IS the control here (unlike a KPI card,
+   where only the View action is), so it carries the affordance itself —
+   pointer, hover wash, and a chevron that appears on hover/active. */
+button.srow{width:100%;background:none;font-family:var(--b);text-align:left;cursor:pointer;
+  border-left:0;border-right:0;border-top:0;border-radius:8px;
+  padding-left:8px;padding-right:8px;margin-left:-8px;margin-right:-8px;
+  width:calc(100% + 16px);transition:background .12s}
+button.srow:hover{background:var(--sunk)}
+button.srow.on{background:var(--navy-bg)}
+button.srow.on .lbl{color:var(--navy);font-weight:600}
+button.srow .chev{flex:none;color:var(--mut2);opacity:0;transition:opacity .12s}
+button.srow:hover .chev,button.srow.on .chev{opacity:1;color:var(--navy)}
 .srow .sw{width:9px;height:9px;border-radius:3px;flex:none}
 .srow .lbl{flex:1;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .srow .val{font-family:var(--d);font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);flex:none}
@@ -1371,7 +1383,7 @@ function kpiCard(o){
       ${o.icon?`<div class="ic ${o.icCls||''}">${o.icon}</div>`:''}
     </div>
     ${o.hint?`<div class="h">${o.hint}</div>`:''}
-    ${o.act?`<div class="kpi-act"><button class="kpi-link" onclick="${o.act.on}">${E(o.act.label||'View')} →</button></div>`:''}
+    ${o.act?`<div class="kpi-act"><button class="kpi-link" onclick="${E(o.act.on)}">${E(o.act.label||'View')} →</button></div>`:''}
   </div>`;
 }
 
@@ -1383,14 +1395,24 @@ function panel(title,body,tagText){
     <div class="b">${body}</div></div>`;
 }
 /* rows: [{label, val, color?, sub?, pct?}] — pct draws a proportion meter. */
+/* rows: [{label, val, color?, sub?, pct?, on?, active?}]. When `on` is
+   supplied the row renders as a button that filters the list above it. */
 function statRows(rows,emptyMsg){
   if(!rows.length)return `<p style="color:var(--mut);font-size:12.5px">${E(emptyMsg||'Nothing to show yet.')}</p>`;
-  return rows.map(r=>`<div class="srow">
-    ${r.color?`<span class="sw" style="background:${r.color}"></span>`:''}
-    <span class="lbl">${E(r.label)}</span>
-    ${r.sub?`<span class="sub">${E(r.sub)}</span>`:''}
-    <span class="val">${E(String(r.val))}</span>
-  </div>${r.pct!=null?`<div class="meter"><span style="width:${Math.max(3,r.pct)}%;background:${r.color||'var(--teal)'}"></span></div>`:''}`).join('');
+  return rows.map(r=>{
+    const inner=`${r.color?`<span class="sw" style="background:${r.color}"></span>`:''}
+      <span class="lbl">${E(r.label)}</span>
+      ${r.sub?`<span class="sub">${E(r.sub)}</span>`:''}
+      <span class="val">${E(String(r.val))}</span>
+      ${r.on?`<span class="chev">→</span>`:''}`;
+    /* E() the handler: values like setNoteFilter('ty',"Approval request")
+       contain double quotes that would otherwise close the onclick
+       attribute early and silently break the row. */
+    const row=r.on
+      ? `<button class="srow${r.active?' on':''}" onclick="${E(r.on)}">${inner}</button>`
+      : `<div class="srow">${inner}</div>`;
+    return row+(r.pct!=null?`<div class="meter"><span style="width:${Math.max(3,r.pct)}%;background:${r.color||'var(--teal)'}"></span></div>`:'');
+  }).join('');
 }
 /* Whole days between an ISO-ish timestamp and now. Used for aging. */
 function daysSince(s){
@@ -2276,14 +2298,17 @@ function calRail(monthPrefix,MF,m,y){
 
 /* ═══ change activity ═══════════════════ */
 function vChg(){
-  const unack=acts.filter(v=>C(v.comp).owners.some(o=>o!==v.by&&U(o).active&&!v.ack.includes(o))).length;
+  const unack=acts.filter(chgWaiting).length;
+  const shownActs=acts.filter(chgMatch);
   return head('chg',canEdit()?`<button class="bt p" onclick="mPull()">Record a pull</button>`:'',[
     {label:`${acts.length} change event${acts.length!==1?'s':''} logged`},
     unack?{label:`${unack} awaiting acknowledgement`,tone:'wait'}:{label:'All acknowledged',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">When someone pulls or applies changes, every other active owner of that component is alerted. The person who made the change is never notified about their own action.</div></div>
-  <div class="c sec"><div class="b flush"><div class="feed">${acts.length?
-      acts.map(v=>{
+  <div class="c sec">${chgFilter.k!=='all'?`<div class="h"><h3>${E(chgFilterLabel())} · ${shownActs.length}</h3>
+      <div class="r"><button class="lk" onclick="setChgFilter('all',null)">Clear filter</button></div></div>`:''}
+    <div class="b flush"><div class="feed">${shownActs.length?
+      shownActs.map(v=>{
         const others=C(v.comp).owners.filter(o=>o!==v.by&&U(o).active);
         const hot=others.includes(me)&&!v.ack.includes(me);
         return `<div class="fi"><div class="dot ${hot?'stop':'go'}"></div><div class="fc">
@@ -2291,21 +2316,53 @@ function vChg(){
           <div class="fm">Notified: ${others.map(o=>E(U(o).nm)).join(', ')||'none'} · Acknowledged: ${v.ack.length?v.ack.map(o=>E(U(o).nm)).join(', '):'no one yet'}</div>
         </div><div class="fw">${fdRel(v.on)}</div>${hot?`<button class="bt s" style="margin-left:10px" onclick="ack('${v.id}')">Acknowledge</button>`:''}</div>`;
       }).join('')
+      :acts.length?chartEmpty('🔍','Nothing in this view','No change events match this filter.')
       :chartEmpty('🔔','No change activity yet','Pulls and applied changes will be logged here.')}
   </div></div></div>
   <div class="summary">${chgRail()}</div>`;
 }
+/* Clicking a row in the Change rail filters the feed above it. */
+let chgFilter={k:'all',v:null};
+function setChgFilter(k,v){
+  chgFilter=(chgFilter.k===k&&chgFilter.v===v)?{k:'all',v:null}:{k,v};
+  draw();window.scrollTo(0,0);
+}
+const chgWaiting=v=>C(v.comp).owners.some(o=>o!==v.by&&U(o).active&&!v.ack.includes(o));
+function chgMatch(v){
+  const f=chgFilter;
+  if(f.k==='ack')return chgWaiting(v)===f.v;
+  if(f.k==='comp')return v.comp===f.v;
+  if(f.k==='by')return v.by===f.v;
+  return true;
+}
+function chgFilterLabel(){
+  const f=chgFilter;
+  if(f.k==='ack')return f.v?'Still waiting':'Fully acknowledged';
+  if(f.k==='comp')return C(f.v).nm;
+  if(f.k==='by')return U(f.v).nm;
+  return '';
+}
 /* Change-activity rail: which components see the most churn, and who is
    driving it. Both counted straight from acts[]. */
 function chgRail(){
-  const byComp=countBy(acts,v=>C(v.comp).nm)
-    .map(([label,count])=>({label,val:count,color:'var(--teal)',pct:Math.round(count/acts.length*100)}));
-  const byPerson=countBy(acts,v=>U(v.by).nm)
-    .map(([label,count])=>({label,val:count,color:'var(--navy)'}));
-  const pending=acts.filter(v=>C(v.comp).owners.some(o=>o!==v.by&&U(o).active&&!v.ack.includes(o))).length;
+  const compIds=[...new Set(acts.map(v=>v.comp))];
+  const byComp=compIds.map(id=>({id,n:acts.filter(v=>v.comp===id).length}))
+    .sort((a,b)=>b.n-a.n)
+    .map(x=>({label:C(x.id).nm,val:x.n,color:'var(--teal)',pct:Math.round(x.n/acts.length*100),
+      on:`setChgFilter('comp',${JSON.stringify(x.id)})`,
+      active:chgFilter.k==='comp'&&chgFilter.v===x.id}));
+  const byIds=[...new Set(acts.map(v=>v.by))];
+  const byPerson=byIds.map(id=>({id,n:acts.filter(v=>v.by===id).length}))
+    .sort((a,b)=>b.n-a.n)
+    .map(x=>({label:U(x.id).nm,val:x.n,color:'var(--navy)',
+      on:`setChgFilter('by',${JSON.stringify(x.id)})`,
+      active:chgFilter.k==='by'&&chgFilter.v===x.id}));
+  const pending=acts.filter(chgWaiting).length;
   const ackRows=[
-    {label:'Fully acknowledged',val:acts.length-pending,color:'var(--go)'},
-    {label:'Still waiting',val:pending,color:pending?'var(--wait)':'var(--mut2)'},
+    {label:'Fully acknowledged',val:acts.length-pending,color:'var(--go)',
+      on:"setChgFilter('ack',false)",active:chgFilter.k==='ack'&&chgFilter.v===false},
+    {label:'Still waiting',val:pending,color:pending?'var(--wait)':'var(--mut2)',
+      on:"setChgFilter('ack',true)",active:chgFilter.k==='ack'&&chgFilter.v===true},
   ];
   return panel('Acknowledgement',statRows(ackRows))
    + panel('Busiest components',statRows(byComp,'No components have activity yet.'))
@@ -2367,33 +2424,65 @@ async function sendManual(){
 /* ═══ notifications ═════════════════════ */
 function vNote(){
   const okCount=notifs.filter(n=>n.ok).length, badCount=notifs.length-okCount;
+  const shownNotifs=notifs.filter(noteMatch);
   return head('note',`<button class="bt" onclick="runCycle()">Run reminder cycle</button>`,[
     {label:`${notifs.length} message${notifs.length!==1?'s':''} logged`},
     {label:`${okCount} sent`,tone:'go'},
     ...(badCount?[{label:`${badCount} retried`,tone:'stop'}]:[])
   ])+`
-  <div class="c sec"><div class="b flush"><div class="feed">${notifs.length?
-      notifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
+  <div class="c sec">${noteFilter.k!=='all'?`<div class="h"><h3>${E(noteFilterLabel())} · ${shownNotifs.length}</h3>
+      <div class="r"><button class="lk" onclick="setNoteFilter('all',null)">Clear filter</button></div></div>`:''}
+    <div class="b flush"><div class="feed">${shownNotifs.length?
+      shownNotifs.map(n=>`<div class="fi"><div class="dot ${n.ok?'go':'stop'}"></div><div class="fc">
         <div class="ft">${E(n.sub)} <span class="tag" style="margin-left:4px">${E(n.ty)}</span></div>
         <div class="fm">To ${n.to.length} recipient${n.to.length!==1?'s':''}: ${n.to.map(t=>E(U(t).em)).join(', ')} ${n.ok?'<span class="stt s-ok" style="margin-left:4px"><i></i>Sent</span>':'<span class="stt s-bad" style="margin-left:4px"><i></i>Retried</span>'}</div>
       </div><div class="fw">${fdRel(n.on)}</div></div>`).join('')
+      :notifs.length?chartEmpty('🔍','Nothing in this view','No messages match this filter.')
       :chartEmpty('📨','No notifications yet','Every message the application sends will show up here.')}
   </div></div></div>
   <div class="summary">${noteRail()}</div>`;
+}
+/* Clicking a row in the Notification rail filters the feed above it. */
+let noteFilter={k:'all',v:null};
+function setNoteFilter(k,v){
+  noteFilter=(noteFilter.k===k&&noteFilter.v===v)?{k:'all',v:null}:{k,v};
+  draw();window.scrollTo(0,0);
+}
+function noteMatch(n){
+  const f=noteFilter;
+  if(f.k==='ok')return n.ok===f.v;
+  if(f.k==='ty')return n.ty===f.v;
+  if(f.k==='to')return n.to.includes(f.v);
+  return true;
+}
+function noteFilterLabel(){
+  const f=noteFilter;
+  if(f.k==='ok')return f.v?'Sent':'Retried';
+  if(f.k==='ty')return f.v;
+  if(f.k==='to')return `To ${U(f.v).nm}`;
+  return '';
 }
 /* Notification rail: message mix, delivery outcome, and who actually
    receives mail — all counted from notifs[]. */
 function noteRail(){
   const typeColors=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
   const byType=countBy(notifs,n=>n.ty).map(([label,count],i)=>({label,val:count,
-    color:typeColors[i%typeColors.length],pct:Math.round(count/notifs.length*100)}));
+    color:typeColors[i%typeColors.length],pct:Math.round(count/notifs.length*100),
+    on:`setNoteFilter('ty',${JSON.stringify(label)})`,
+    active:noteFilter.k==='ty'&&noteFilter.v===label}));
   const okCount=notifs.filter(n=>n.ok).length;
   const delivery=[
-    {label:'Sent',val:okCount,color:'var(--go)'},
-    {label:'Retried',val:notifs.length-okCount,color:notifs.length-okCount?'var(--stop)':'var(--mut2)'},
+    {label:'Sent',val:okCount,color:'var(--go)',on:"setNoteFilter('ok',true)",
+      active:noteFilter.k==='ok'&&noteFilter.v===true},
+    {label:'Retried',val:notifs.length-okCount,color:notifs.length-okCount?'var(--stop)':'var(--mut2)',
+      on:"setNoteFilter('ok',false)",active:noteFilter.k==='ok'&&noteFilter.v===false},
   ];
-  const recips=countBy(notifs.flatMap(n=>n.to),id=>U(id).nm).slice(0,6)
-    .map(([label,count])=>({label,val:count,color:'var(--teal)'}));
+  const recipIds=[...new Set(notifs.flatMap(n=>n.to))];
+  const recips=recipIds.map(id=>({id,n:notifs.filter(x=>x.to.includes(id)).length}))
+    .sort((a,b)=>b.n-a.n).slice(0,6)
+    .map(x=>({label:U(x.id).nm,val:x.n,color:'var(--teal)',
+      on:`setNoteFilter('to',${JSON.stringify(x.id)})`,
+      active:noteFilter.k==='to'&&noteFilter.v===x.id}));
   return panel('Delivery',statRows(delivery))
    + panel('Message types',statRows(byType,'No messages logged yet.'))
    + panel('Most contacted',statRows(recips,'No recipients yet.'));
@@ -2402,32 +2491,66 @@ function noteRail(){
 /* ═══ audit ═════════════════════════════ */
 function vAud(){
   const actors=new Set(audit.map(a=>a.ac)).size;
+  const shownAudit=audit.filter(audMatch);
   return head('aud',`<button class="bt" onclick="exportCsv()">Export</button>`,[
     {label:`${audit.length} entr${audit.length!==1?'ies':'y'}`},
     {label:`${actors} actor${actors!==1?'s':''}`,tone:'teal'},
     {label:'Append-only',tone:'go'}
   ])+`
   <div class="sec"><div class="mt">Append-only by design. No role, including Admin, can edit or remove an entry — there is deliberately no delete control anywhere on this screen.</div></div>
-  <div class="c sec"><div class="b flush"><div class="feed">${audit.length?
-      audit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
+  <div class="c sec">${audFilter.k!=='all'?`<div class="h"><h3>${E(audFilterLabel())} · ${shownAudit.length}</h3>
+      <div class="r"><button class="lk" onclick="setAudFilter('all',null)">Clear filter</button></div></div>`:''}
+    <div class="b flush"><div class="feed">${shownAudit.length?
+      shownAudit.map(a=>`<div class="fi"><div class="dot ${a.rs?'stop':''}"></div><div class="fc">
         <div class="ft">${E(U(a.ac).nm)} — ${E(a.act)}${a.rel?` <span class="tag" style="margin-left:4px">${E(R(a.rel).ref)}</span>`:''}</div>
         <div class="fm">${a.comp?E(C(a.comp).nm):(a.rel?E(C(R(a.rel).comp).nm):'')}${a.prev!=='—'?` · ${E(a.prev)} → <span style="color:var(--ink)">${E(a.next)}</span>`:''}${a.rs?` · <span style="color:var(--stop)">${E(a.rs)}</span>`:''}</div>
       </div><div class="fw">${fdRel(a.on)}</div></div>`).join('')
+      :audit.length?chartEmpty('🔍','Nothing in this view','No entries match this filter.')
       :chartEmpty('📋','No audit entries yet','Every action taken in the application will be recorded here.')}
   </div></div></div>
   <div class="summary">${audRail()}</div>`;
 }
+/* Clicking a row in the Audit rail filters the feed above it. */
+let audFilter={k:'all',v:null};
+function setAudFilter(k,v){
+  audFilter=(audFilter.k===k&&audFilter.v===v)?{k:'all',v:null}:{k,v};
+  draw();window.scrollTo(0,0);
+}
+const audIsTransition=a=>!!(a.prev&&a.prev!=='—');
+function audMatch(a){
+  const f=audFilter;
+  if(f.k==='ac')return a.ac===f.v;
+  if(f.k==='transition')return audIsTransition(a);
+  if(f.k==='reason')return !!a.rs;
+  if(f.k==='other')return !audIsTransition(a);
+  return true;
+}
+function audFilterLabel(){
+  const f=audFilter;
+  if(f.k==='ac')return U(f.v).nm;
+  if(f.k==='transition')return 'State transitions';
+  if(f.k==='reason')return 'With a stated reason';
+  if(f.k==='other')return 'Other actions';
+  return '';
+}
 /* Audit rail: who is acting and how recently, from audit[] only. */
 function audRail(){
-  const byActor=countBy(audit,a=>U(a.ac).nm).slice(0,8)
-    .map(([label,count])=>({label,val:count,color:'var(--navy)',
-      pct:Math.round(count/Math.max(1,audit.length)*100)}));
+  const actorIds=[...new Set(audit.map(a=>a.ac))];
+  const byActor=actorIds.map(id=>({id,n:audit.filter(a=>a.ac===id).length}))
+    .sort((a,b)=>b.n-a.n).slice(0,8)
+    .map(x=>({label:U(x.id).nm,val:x.n,color:'var(--navy)',
+      pct:Math.round(x.n/Math.max(1,audit.length)*100),
+      on:`setAudFilter('ac',${JSON.stringify(x.id)})`,
+      active:audFilter.k==='ac'&&audFilter.v===x.id}));
   const withReason=audit.filter(a=>a.rs).length;
-  const transitions=audit.filter(a=>a.prev&&a.prev!=='—').length;
+  const transitions=audit.filter(audIsTransition).length;
   const shape=[
-    {label:'State transitions',val:transitions,color:'var(--teal)'},
-    {label:'With a stated reason',val:withReason,color:withReason?'var(--wait)':'var(--mut2)'},
-    {label:'Other actions',val:audit.length-transitions,color:'var(--mut2)'},
+    {label:'State transitions',val:transitions,color:'var(--teal)',
+      on:"setAudFilter('transition',null)",active:audFilter.k==='transition'},
+    {label:'With a stated reason',val:withReason,color:withReason?'var(--wait)':'var(--mut2)',
+      on:"setAudFilter('reason',null)",active:audFilter.k==='reason'},
+    {label:'Other actions',val:audit.length-transitions,color:'var(--mut2)',
+      on:"setAudFilter('other',null)",active:audFilter.k==='other'},
   ];
   const newest=audit.length?audit[0].on:null;
   return panel('Most active',statRows(byActor,'No audit entries yet.'),
