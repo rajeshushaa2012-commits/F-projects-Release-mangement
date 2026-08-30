@@ -450,10 +450,17 @@ def forgot_password(payload: ForgotPasswordPayload):
         )
         try:
             deliver_email([email], "Your password reset code", body)
-        except HTTPException:
-            # Never surface a delivery error here: a 503 for one address and a
-            # 200 for another would still reveal which addresses exist.
-            pass
+            print(f"[reset] code emailed for user id={row['id']}", flush=True)
+        except HTTPException as e:
+            # The HTTP response stays generic either way — a 503 for one address
+            # and a 200 for another would still reveal which addresses exist.
+            # But a silently dropped email is indistinguishable from a working
+            # one to whoever is waiting for it, so say so in the server log.
+            print(
+                f"[reset] DELIVERY FAILED for user id={row['id']} — the code was "
+                f"stored but no email was sent. {e.detail}",
+                flush=True,
+            )
         return generic
     finally:
         conn.close()
