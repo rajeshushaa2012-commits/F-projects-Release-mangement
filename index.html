@@ -657,13 +657,18 @@ tbody tr.editing select{padding-right:26px;background-position:right 8px center}
 
 <script>
 /* ═══ stage model ═══════════════════════ */
+/* Seven steps, in the order a release actually moves. Two of them are gates:
+   UAT Testing (business signs off on what they tested) and Production. The
+   'uatt' key is the business gate — releases saved under the older 6-stage
+   model, where that gate lived on 'uat', are migrated by migrateStages(). */
 const STAGES=[
-  {k:'groom',nm:'Grooming session',  sm:'Scope agreed',        gate:false},
-  {k:'test', nm:'Testing progress',  sm:'Dev testing',         gate:false},
-  {k:'dev',  nm:'Development env',   sm:'Available in dev',    gate:false},
-  {k:'uat',  nm:'Business approval',   sm:'Business validation', gate:true},
-  {k:'prod', nm:'Production',        sm:'Move to production',  gate:true},
-  {k:'done', nm:'Release completed', sm:'Confirmed live',      gate:false}
+  {k:'groom',nm:'Grooming',           sm:'Scope agreed',        gate:false},
+  {k:'anal', nm:'Analysis',           sm:'Requirements agreed', gate:false},
+  {k:'dev',  nm:'Development',        sm:'Built in dev',        gate:false},
+  {k:'uat',  nm:'UAT',                sm:'Deployed to UAT',     gate:false},
+  {k:'uatt', nm:'UAT Testing',        sm:'Business validation', gate:true},
+  {k:'prod', nm:'Production',         sm:'Move to production',  gate:true},
+  {k:'done', nm:'Released / Completed',sm:'Confirmed live',     gate:false}
 ];
 const SI=k=>STAGES.findIndex(s=>s.k===k);
 const SL=k=>(STAGES.find(s=>s.k===k)||{}).nm||k;
@@ -720,6 +725,45 @@ let users=[]; const U=id=>users.find(u=>u.id===id)||{nm:'—',em:'—'};
 let comps=[]; const C=id=>comps.find(c=>c.id===id)||{nm:'—',owners:[]};
 let groups=[]; const G=id=>groups.find(g=>g.id===id)||{nm:'—',members:[]};
 const blank=cur=>{const o={};STAGES.forEach((s,i)=>{o[s.k]=i<SI(cur)?'completed':(i===SI(cur)?'inProgress':'notStarted')});return o};
+/* Releases and approvals saved under the older 6-stage model used 'test' for
+   what is now Analysis, and put the business gate on 'uat'. UAT is now a
+   plain deploy step and the gate moved to 'uatt' (UAT Testing), so remap the
+   stored keys once on load. Anything already keyed to the new model is left
+   alone, and no release data other than these stage keys is touched. */
+const STAGE_SCHEMA=2;
+function migrateStages(){
+  rels.forEach(r=>{
+    // Marked releases are already on the 7-stage model. Without this a release
+    // legitimately sitting at the NEW 'uat' step is indistinguishable from an
+    // un-migrated one and would get pushed to 'uatt' on every single load.
+    if(r.sv>=STAGE_SCHEMA)return;
+    const st=r.st||{};
+    // 'test' became Analysis.
+    if(st.test!==undefined){
+      if(st.anal===undefined||st.anal==='notStarted')st.anal=st.test;
+      delete st.test;
+    }
+    if(r.cur==='test')r.cur='anal';
+    // Old 'uat' WAS the business approval gate, so anything parked there —
+    // whatever its state — belongs on 'uatt' now, and 'uat' becomes the
+    // plain deploy step it reached to get there.
+    if(r.cur==='uat'){
+      if(st.uatt===undefined||st.uatt==='notStarted')st.uatt=st.uat||'inProgress';
+      st.uat='completed';
+      r.cur='uatt';
+    }else if(['approved','rejected','waiting'].includes(st.uat)){
+      if(st.uatt===undefined||st.uatt==='notStarted')st.uatt=st.uat;
+      st.uat='completed';
+    }
+    STAGES.forEach(s=>{if(st[s.k]===undefined)st[s.k]='notStarted'});
+    r.st=st;
+    if(!STAGES.some(s=>s.k===r.cur))r.cur='groom';
+    r.sv=STAGE_SCHEMA;
+  });
+  // No approval can legitimately sit on 'uat' any more — it is not a gate.
+  apps_.forEach(a=>{if(a.stage==='uat')a.stage='uatt'});
+  groups.forEach(g=>{if(g.stage==='uat')g.stage='uatt'});
+}
 let rels=[]; const R=id=>rels.find(r=>r.id===id);
 let apps_=[];
 let notifs=[];
@@ -833,6 +877,7 @@ function applyState(s){
     if(!Array.isArray(r.milestones))r.milestones=blankMilestones();
     else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
   });
+  migrateStages();
   // Backfill Project Name and the 17 project-tracker fields onto rows
   // saved under an earlier schema — existing values are never overwritten.
   conflicts.forEach(c=>{
@@ -1100,8 +1145,8 @@ function canAdvance(r){
   const nx=STAGES[i+1],cs=stageState(r,r.cur);
   if(cs==='waiting')return[false,'An approval request is open on this stage.'];
   if(cs==='rejected')return[false,'This stage was rejected. Raise a new approval or return the release.'];
-  if(nx.k==='uat'&&stageState(r,'dev')!=='completed'&&r.cur!=='dev')return[false,'Development environment must be completed first.'];
-  if(nx.k==='prod'&&stageState(r,'uat')!=='approved')return[false,'UAT approval must be recorded before Production.'];
+  if(nx.k==='uat'&&stageState(r,'dev')!=='completed'&&r.cur!=='dev')return[false,'Development must be completed first.'];
+  if(nx.k==='prod'&&stageState(r,'uatt')!=='approved')return[false,'UAT Testing approval must be recorded before Production.'];
   if(nx.k==='done'&&stageState(r,'prod')!=='approved')return[false,'Production approval must be recorded before completion.'];
   if(STAGES[i].gate&&cs!=='approved')return[false,`${SL(r.cur)} approval must be recorded first.`];
   return[true,''];
@@ -1111,7 +1156,7 @@ function canRequest(r,stage){
   if(openApp(r.id,stage))return[false,'An approval request is already open.'];
   if(stageState(r,stage)==='approved')return[false,'Already approved.'];
   if(stage==='prod'&&!r.plan)return[false,'Set a planned production release date before requesting approval.'];
-  if(stage==='prod'&&stageState(r,'uat')!=='approved')return[false,'UAT approval is required first.'];
+  if(stage==='prod'&&stageState(r,'uatt')!=='approved')return[false,'UAT Testing approval is required first.'];
   return[true,''];
 }
 
@@ -1539,9 +1584,9 @@ function helpCard(){
       <div>
         <div style="font-family:var(--d);font-weight:700;font-size:15px;margin-bottom:6px">What is this page?</div>
         <div style="color:var(--ink2);font-size:13.5px;line-height:1.7">
-          BMS Release Management tracks each change (a "release") as it moves through steps: Grooming → Testing → Dev →
-          <b>Business approval</b> → <b>Production</b> → Done. The two bold steps need someone to click Approve
-          before the release can continue. The left menu: <b>Overview</b> is your day-to-day work,
+          BMS Release Management tracks each change (a "release") as it moves through steps: Grooming → Analysis →
+          Development → UAT → <b>UAT Testing</b> → <b>Production</b> → Released. The two bold steps need someone to
+          click Approve before the release can continue. The left menu: <b>Overview</b> is your day-to-day work,
           <b>Messages</b> is everything sent or logged, <b>Settings</b> is who's who and how approvals are set up.
         </div>
       </div>
@@ -1672,8 +1717,8 @@ function vDash(){
   const done=rels.filter(r=>r.cur==='done').slice(0,4);
 
   const statusBuckets=[
-    {label:'In Progress',count:rels.filter(r=>['groom','test','dev'].includes(r.cur)).length,color:'var(--info)'},
-    {label:'Approval',count:rels.filter(r=>r.cur==='uat').length,color:'var(--wait)'},
+    {label:'In Progress',count:rels.filter(r=>['groom','anal','dev','uat'].includes(r.cur)).length,color:'var(--info)'},
+    {label:'Approval',count:rels.filter(r=>r.cur==='uatt').length,color:'var(--wait)'},
     {label:'Production',count:rels.filter(r=>r.cur==='prod').length,color:'var(--teal)'},
     {label:'Released',count:rels.filter(r=>r.cur==='done').length,color:'var(--go)'},
   ];
@@ -2038,7 +2083,7 @@ function vRel(){
   const[reqOk,reqWhy]=gate?canRequest(r,r.cur):[false,''];
   const oa=openApp(r.id,r.cur);
   const acts_=canEditRelease(r)?`
-    ${gate&&!oa?`<button class="bt p" ${reqOk?'':'disabled'} onclick="mApprove('${r.id}','${r.cur}')">Send for ${r.cur==='uat'?'business':'production'} approval</button>`:''}
+    ${gate&&!oa?`<button class="bt p" ${reqOk?'':'disabled'} onclick="mApprove('${r.id}','${r.cur}')">Send for ${r.cur==='uatt'?'business':'production'} approval</button>`:''}
     ${advOk?`<button class="bt ${gate?'':'p'}" onclick="advance('${r.id}')">Move to ${SL(STAGES[ci+1].k)}</button>`:''}
     ${ci>0?`<button class="bt d" onclick="mReturn('${r.id}')">Return to earlier gate</button>`:''}
     ${hasPerm('delete_release')?`<button class="bt d" onclick="mDelRelease('${r.id}')">Delete release</button>`:''}`:'';
@@ -2147,7 +2192,7 @@ function vRel(){
           <div class="k">Component</div><div>${E(C(r.comp).nm)}</div>
           <div class="k">Developer Name</div><div>${E(U(r.owner).nm)}</div>
           <div class="k">Current stage</div><div>${E(SL(r.cur))}</div>
-          <div class="k">Business</div><div>${(()=>{const d=lastDec(r.id,'uat');
+          <div class="k">Business</div><div>${(()=>{const d=lastDec(r.id,'uatt');
             return d?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:11px;color:var(--mut2);margin-top:3px">${fdt(d.on)} · ${E(U(d.u).nm)}</div>`
             :'<span style="color:var(--mut)">Not approved</span>'})()}</div>
           <div class="k">Production</div><div>${(()=>{const d=lastDec(r.id,'prod');
@@ -2473,7 +2518,7 @@ function exportConflictsCsv(){
 }
 
 /* ═══ calendar ══════════════════════════ */
-function evStatusCls(cur){return cur==='uat'?'st-appr':cur==='prod'?'st-prod':cur==='done'?'st-done':''}
+function evStatusCls(cur){return cur==='uatt'?'st-appr':cur==='prod'?'st-prod':cur==='done'?'st-done':''}
 function vCal(){
   const y=calMonth.getFullYear(),m=calMonth.getMonth();
   const start=(new Date(y,m,1).getDay()+6)%7,days=new Date(y,m+1,0).getDate();
@@ -2505,7 +2550,7 @@ function vCal(){
     </div>
     <div class="cal-legend">
       <div class="row"><span class="sw" style="background:var(--teal)"></span>In progress</div>
-      <div class="row"><span class="sw" style="background:var(--wait)"></span>Business approval</div>
+      <div class="row"><span class="sw" style="background:var(--wait)"></span>UAT Testing</div>
       <div class="row"><span class="sw" style="background:var(--navy)"></span>Production</div>
       <div class="row"><span class="sw" style="background:var(--go)"></span>Released</div>
     </div></div></div>
@@ -2890,8 +2935,8 @@ function vCmp(){
       const cr=rels.filter(r=>r.comp===c.id);
       /* Real stage split for this component's releases — not filler. */
       const buckets=[
-        {label:'In progress',count:cr.filter(r=>['groom','test','dev'].includes(r.cur)).length,color:'var(--info)'},
-        {label:'Approval',count:cr.filter(r=>r.cur==='uat').length,color:'var(--wait)'},
+        {label:'In progress',count:cr.filter(r=>['groom','anal','dev','uat'].includes(r.cur)).length,color:'var(--info)'},
+        {label:'Approval',count:cr.filter(r=>r.cur==='uatt').length,color:'var(--wait)'},
         {label:'Production',count:cr.filter(r=>r.cur==='prod').length,color:'var(--teal)'},
         {label:'Released',count:cr.filter(r=>r.cur==='done').length,color:'var(--go)'},
       ];
@@ -3190,11 +3235,11 @@ function saveRelRow(id){
     if('approved' in v)m.approved=v.approved;if('status' in v)m.status=v.status;
   });
   if(id==='draft'){
-    const r={id:nid('R'),ref:'REL-'+(1044+rels.length),...vals,cur:'groom',st:blank('groom'),cmts:[],atts:[],
+    const r={id:nid('R'),ref:'REL-'+(1044+rels.length),...vals,cur:'groom',st:blank('groom'),sv:STAGE_SCHEMA,cmts:[],atts:[],
       milestones:blankMilestones()};
     applyMilestones(r);
     rels.unshift(r);
-    logAudit('Created release',r.id,'—','Grooming session');
+    logAudit('Created release',r.id,'—',SL('groom'));
     editingRelId=null;draftRelease=null;
     draw();toast('Release created');persist();
   }else{
