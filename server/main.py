@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -41,6 +42,10 @@ STATE_KEYS = ["uid", "users", "comps", "groups", "rels", "apps_", "notifs", "act
 
 SESSION_COOKIE = "relay_session"
 SESSION_LIFETIME = timedelta(hours=12)
+# Password reset codes are short-lived on purpose: long enough to switch to an
+# inbox and back, short enough that a code sitting in an old email is useless.
+RESET_CODE_LIFETIME = timedelta(minutes=15)
+RESET_MAX_ATTEMPTS = 5
 # Cookies are HttpOnly (JS can never read the token, so it can't be stolen via XSS)
 # and SameSite=Lax (sent on normal same-site navigation, blocked on cross-site
 # POSTs — a reasonable CSRF baseline for a single-origin app like this one).
@@ -102,6 +107,21 @@ def get_conn():
         "expires_at TEXT NOT NULL)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
+    # Self-service password reset. The emailed code is stored only as a PBKDF2
+    # hash (same as a password), so a database leak does not hand out working
+    # reset codes. Codes are single-use, expire, and cap failed attempts.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS password_resets ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "user_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, "
+        "code_salt TEXT NOT NULL, "
+        "code_hash TEXT NOT NULL, "
+        "attempts INTEGER NOT NULL DEFAULT 0, "
+        "created_at TEXT NOT NULL, "
+        "expires_at TEXT NOT NULL, "
+        "used_at TEXT)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id)")
     conn.execute(
         "CREATE TABLE IF NOT EXISTS files ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -267,6 +287,20 @@ class ResetPasswordPayload(BaseModel):
     new_password: str
 
 
+class ForgotPasswordPayload(BaseModel):
+    email: str
+
+
+class ConfirmResetPayload(BaseModel):
+    email: str
+    code: str
+    new_password: str
+
+
+class MyEmailPayload(BaseModel):
+    email: str
+
+
 class PermissionsPayload(BaseModel):
     permissions: list[str]
 
@@ -341,6 +375,137 @@ def change_password(payload: ChangePasswordPayload, user: dict = Depends(get_cur
         )
         conn.commit()
         return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/auth/my-email")
+def set_my_email(payload: MyEmailPayload, user: dict = Depends(get_current_user)):
+    """Lets a signed-in account set its own recovery address. Without this the
+    seeded admin has email=NULL and can never receive a reset code."""
+    email = payload.email.strip()
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="enter a valid email address")
+    conn = get_conn()
+    try:
+        clash = conn.execute(
+            "SELECT id FROM auth_users WHERE lower(email) = lower(?) AND id != ?", (email, user["id"])
+        ).fetchone()
+        if clash:
+            raise HTTPException(status_code=409, detail="another account already uses that email address")
+        conn.execute(
+            "UPDATE auth_users SET email=?, updated_at=?, updated_by=? WHERE id=?",
+            (email, datetime.now(timezone.utc).isoformat(), user["username"], user["id"]),
+        )
+        conn.commit()
+        return {"ok": True, "email": email}
+    finally:
+        conn.close()
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(payload: ForgotPasswordPayload):
+    """Emails a single-use 6-digit code. Always reports success: telling an
+    anonymous caller whether an address is registered would turn this into an
+    account-enumeration oracle."""
+    email = payload.email.strip()
+    generic = {"ok": True, "message": "If that email matches an account, a reset code is on its way."}
+    if not email or "@" not in email:
+        return generic
+
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT * FROM auth_users WHERE lower(email) = lower(?) AND active = 1", (email,)
+        ).fetchone()
+        if row is None:
+            return generic
+
+        now = datetime.now(timezone.utc)
+        # Supersede any earlier outstanding code so only the newest one works.
+        conn.execute(
+            "UPDATE password_resets SET used_at=? WHERE user_id=? AND used_at IS NULL",
+            (now.isoformat(), row["id"]),
+        )
+        code = f"{secrets.randbelow(1000000):06d}"
+        code_salt, code_hash = auth.hash_password(code)
+        conn.execute(
+            "INSERT INTO password_resets (user_id, code_salt, code_hash, created_at, expires_at) "
+            "VALUES (?,?,?,?,?)",
+            (row["id"], code_salt, code_hash, now.isoformat(),
+             (now + RESET_CODE_LIFETIME).isoformat()),
+        )
+        conn.commit()
+
+        minutes = int(RESET_CODE_LIFETIME.total_seconds() // 60)
+        body = (
+            f"Hello {row['name']},\n\n"
+            f"Use this code to reset your BMS Release Management password:\n\n"
+            f"    {code}\n\n"
+            f"The code expires in {minutes} minutes and can only be used once.\n"
+            f"Your username is: {row['username']}\n\n"
+            f"If you did not request this, you can ignore this email — your "
+            f"password has not changed.\n"
+        )
+        try:
+            deliver_email([email], "Your password reset code", body)
+        except HTTPException:
+            # Never surface a delivery error here: a 503 for one address and a
+            # 200 for another would still reveal which addresses exist.
+            pass
+        return generic
+    finally:
+        conn.close()
+
+
+@app.post("/api/auth/reset-password")
+def confirm_reset_password(payload: ConfirmResetPayload):
+    email = payload.email.strip()
+    code = payload.code.strip()
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="new password must be at least 6 characters")
+
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        user_row = conn.execute(
+            "SELECT * FROM auth_users WHERE lower(email) = lower(?) AND active = 1", (email,)
+        ).fetchone()
+        invalid = HTTPException(status_code=400, detail="that code is not valid or has expired")
+        if user_row is None:
+            raise invalid
+
+        reset = conn.execute(
+            "SELECT * FROM password_resets WHERE user_id=? AND used_at IS NULL "
+            "ORDER BY id DESC LIMIT 1", (user_row["id"],)
+        ).fetchone()
+        if reset is None:
+            raise invalid
+        if datetime.fromisoformat(reset["expires_at"]) < datetime.now(timezone.utc):
+            raise invalid
+        if reset["attempts"] >= RESET_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="too many incorrect attempts — request a new reset code",
+            )
+        if not auth.verify_password(code, reset["code_salt"], reset["code_hash"]):
+            conn.execute("UPDATE password_resets SET attempts = attempts + 1 WHERE id = ?", (reset["id"],))
+            conn.commit()
+            raise invalid
+
+        now = datetime.now(timezone.utc).isoformat()
+        salt, phash = auth.hash_password(payload.new_password)
+        conn.execute(
+            "UPDATE auth_users SET password_salt=?, password_hash=?, must_change_password=0, "
+            "updated_at=?, updated_by=? WHERE id=?",
+            (salt, phash, now, user_row["username"], user_row["id"]),
+        )
+        conn.execute("UPDATE password_resets SET used_at=? WHERE id=?", (now, reset["id"]))
+        # Any session opened with the old password is no longer trustworthy.
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_row["id"],))
+        conn.commit()
+        return {"ok": True, "username": user_row["username"]}
     finally:
         conn.close()
 
@@ -561,17 +726,16 @@ def email_status(user: dict = Depends(get_current_user)):
     return {"configured": bool(BREVO_API_KEY and SENDER_EMAIL), "from": SENDER_EMAIL}
 
 
-@app.post("/api/send-email")
-def send_email(payload: EmailPayload, user: dict = Depends(get_current_user)):
+def deliver_email(to_addrs: list[str], subject: str, body: str) -> int:
+    """Sends via Brevo's HTTPS API. Raises HTTPException on any failure so
+    callers that must not leak whether an address exists can catch it."""
     if not BREVO_API_KEY or not SENDER_EMAIL:
         raise HTTPException(
             status_code=503,
             detail="Email is not configured on the server — set BREVO_API_KEY and RELAY_SMTP_USER.",
         )
-    to_addrs = [a.strip() for a in payload.to if a and "@" in a]
     if not to_addrs:
         raise HTTPException(status_code=400, detail="no valid recipient addresses")
-
     try:
         resp = requests.post(
             "https://api.brevo.com/v3/smtp/email",
@@ -579,18 +743,23 @@ def send_email(payload: EmailPayload, user: dict = Depends(get_current_user)):
             json={
                 "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
                 "to": [{"email": a} for a in to_addrs],
-                "subject": payload.subject,
-                "textContent": payload.body,
+                "subject": subject,
+                "textContent": body,
             },
             timeout=15,
         )
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"Could not reach Brevo: {e}")
-
     if resp.status_code >= 300:
         raise HTTPException(status_code=502, detail=f"Brevo rejected the email ({resp.status_code}): {resp.text}")
+    return len(to_addrs)
 
-    return {"ok": True, "sent": len(to_addrs)}
+
+@app.post("/api/send-email")
+def send_email(payload: EmailPayload, user: dict = Depends(get_current_user)):
+    to_addrs = [a.strip() for a in payload.to if a and "@" in a]
+    sent = deliver_email(to_addrs, payload.subject, payload.body)
+    return {"ok": True, "sent": sent}
 
 
 def row_to_file(row):

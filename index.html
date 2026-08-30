@@ -854,9 +854,10 @@ function isEditing(){
 }
 
 /* ═══ login ══════════════════════════════ */
-function showLogin(msg){
+/* Sign in, "send me a code", and "enter the code" are three cards inside the
+   same split shell — only the right-hand card changes between them. */
+function authShell(card){
   document.getElementById('rail').innerHTML='';
-  document.getElementById('crumb').textContent='Sign in';
   document.body.classList.add('auth');
   document.getElementById('view').innerHTML=`
     <div class="auth-split">
@@ -873,18 +874,100 @@ function showLogin(msg){
       <div class="auth-form"><div class="auth-box">
         <div class="auth-mini"><div class="lg">B</div>
           <div class="mk"><b>BMS</b><span>Release Management</span></div></div>
+        ${card}
+      </div></div>
+    </div>`;
+}
+const AUTHLINK='background:none;border:0;padding:0;color:var(--teal);font:inherit;font-size:12.5px;font-weight:500;cursor:pointer;text-decoration:underline';
+function showLogin(msg,prefill){
+  document.getElementById('crumb').textContent='Sign in';
+  authShell(`
         <h3>Sign in</h3>
         <p class="sub">${E(msg||'Enter your username and password.')}</p>
-        <label>Username</label><input id="lu" placeholder="Username" autocomplete="username" style="margin-bottom:12px">
+        <label>Username</label><input id="lu" placeholder="Username" autocomplete="username" value="${E(prefill||'')}" style="margin-bottom:12px">
         <label>Password</label><input id="lp" type="password" placeholder="Password" autocomplete="current-password" style="margin-bottom:12px">
         <div class="er" id="e-login"></div>
         <button class="bt p" style="width:100%;margin-top:6px" onclick="submitLogin()">Sign in</button>
-      </div></div>
-    </div>`;
-  const lu=document.getElementById('lu');
-  lu.focus();
+        <div style="margin-top:14px;text-align:center">
+          <button style="${AUTHLINK}" onclick="showForgot()">Forgot password?</button>
+        </div>`);
+  const lu=document.getElementById('lu'),lp=document.getElementById('lp');
+  (prefill?lp:lu).focus();
   lu.addEventListener('keydown',e=>{if(e.key==='Enter')submitLogin()});
-  document.getElementById('lp').addEventListener('keydown',e=>{if(e.key==='Enter')submitLogin()});
+  lp.addEventListener('keydown',e=>{if(e.key==='Enter')submitLogin()});
+}
+/* Step 1 — ask which address to send the code to. */
+function showForgot(email,msg){
+  document.getElementById('crumb').textContent='Reset password';
+  authShell(`
+        <h3>Reset your password</h3>
+        <p class="sub">${E(msg||'Enter the email address on your account and we will send you a reset code.')}</p>
+        <label>Email address</label><input id="fe" type="email" placeholder="you@gmail.com" autocomplete="email" value="${E(email||'')}" style="margin-bottom:12px">
+        <div class="er" id="e-forgot"></div>
+        <button class="bt p" id="fb" style="width:100%;margin-top:6px" onclick="submitForgot()">Send reset code</button>
+        <div style="margin-top:14px;text-align:center">
+          <button style="${AUTHLINK}" onclick="showLogin()">Back to sign in</button>
+        </div>`);
+  const fe=document.getElementById('fe');
+  fe.focus();
+  fe.addEventListener('keydown',e=>{if(e.key==='Enter')submitForgot()});
+}
+async function submitForgot(){
+  const email=document.getElementById('fe').value.trim();
+  const err=document.getElementById('e-forgot');err.classList.remove('on');
+  if(!email||!email.includes('@')){err.textContent='Enter the email address on your account.';err.classList.add('on');return}
+  const btn=document.getElementById('fb');btn.disabled=true;btn.textContent='Sending...';
+  try{
+    const res=await fetch('/api/auth/forgot-password',{method:'POST',credentials:'same-origin',headers:jsonHeaders,
+      body:JSON.stringify({email})});
+    if(!res.ok){const j=await res.json().catch(()=>({}));throw new Error(j.detail||'Could not send the code.')}
+    showResetCode(email);
+  }catch(e){
+    btn.disabled=false;btn.textContent='Send reset code';
+    err.textContent=e.message||'Could not reach the server.';err.classList.add('on');
+  }
+}
+/* Step 2 — the code plus the new password, in one card. */
+function showResetCode(email,msg){
+  document.getElementById('crumb').textContent='Reset password';
+  authShell(`
+        <h3>Enter the code</h3>
+        <p class="sub">${E(msg||`If ${email} matches an account, a 6-digit code is on its way. It expires in 15 minutes.`)}</p>
+        <label>Reset code</label>
+        <input id="rc" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code"
+          style="margin-bottom:12px;font-family:var(--m);font-size:18px;letter-spacing:6px;text-align:center">
+        <label>New password</label><input id="rp1" type="password" autocomplete="new-password" style="margin-bottom:12px">
+        <label>Confirm new password</label><input id="rp2" type="password" autocomplete="new-password" style="margin-bottom:12px">
+        <div class="er" id="e-reset"></div>
+        <button class="bt p" id="rb" style="width:100%;margin-top:6px" onclick="submitReset('${E(email)}')">Reset password</button>
+        <div style="margin-top:14px;display:flex;gap:14px;justify-content:center">
+          <button style="${AUTHLINK}" onclick="showForgot('${E(email)}','Send a new code to this address.')">Send a new code</button>
+          <button style="${AUTHLINK}" onclick="showLogin()">Back to sign in</button>
+        </div>`);
+  const rc=document.getElementById('rc');
+  rc.focus();
+  document.getElementById('rp2').addEventListener('keydown',e=>{if(e.key==='Enter')submitReset(email)});
+}
+async function submitReset(email){
+  const code=document.getElementById('rc').value.trim();
+  const p1=document.getElementById('rp1').value,p2=document.getElementById('rp2').value;
+  const err=document.getElementById('e-reset');err.classList.remove('on');
+  if(!code){err.textContent='Enter the 6-digit code from the email.';err.classList.add('on');return}
+  if(!p1){err.textContent='Enter a new password.';err.classList.add('on');return}
+  if(p1!==p2){err.textContent='New passwords do not match.';err.classList.add('on');return}
+  if(p1.length<6){err.textContent='New password must be at least 6 characters.';err.classList.add('on');return}
+  const btn=document.getElementById('rb');btn.disabled=true;btn.textContent='Resetting...';
+  try{
+    const res=await fetch('/api/auth/reset-password',{method:'POST',credentials:'same-origin',headers:jsonHeaders,
+      body:JSON.stringify({email,code,new_password:p1})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){btn.disabled=false;btn.textContent='Reset password';
+      err.textContent=j.detail||'Could not reset the password.';err.classList.add('on');return}
+    showLogin('Password updated — sign in with your new password.',j.username||'');
+  }catch(e){
+    btn.disabled=false;btn.textContent='Reset password';
+    err.textContent='Could not reach the server.';err.classList.add('on');
+  }
 }
 async function submitLogin(){
   const username=document.getElementById('lu').value.trim(),password=document.getElementById('lp').value;
@@ -1194,7 +1277,30 @@ function vMypw(){
     <label>Confirm new password</label><input id="pw-new2" type="password" style="margin-bottom:8px">
     <div class="er" id="e-pw"></div>
     <button class="bt p" style="margin-top:8px" onclick="submitChangePassword()">Change password</button>
+  </div></div>
+  <div class="sec c" style="max-width:460px"><div class="h"><h3>Your account</h3>
+    ${authUser?.email?'':`<div class="r"><span class="tag wait">No email set</span></div>`}</div>
+    <div class="b">
+    <label>Email for password reset</label>
+    <input id="my-email" type="email" placeholder="you@gmail.com" value="${E(authUser?.email||'')}" style="margin-bottom:8px">
+    <div class="er" id="e-myemail"></div>
+    <div class="mt" style="margin-bottom:12px">Needed to reset your own password from the sign-in page if you
+      get locked out. Without it, "Forgot password?" cannot reach this account.</div>
+    <button class="bt p" onclick="submitMyEmail()">Save email</button>
   </div></div>`;
+}
+async function submitMyEmail(){
+  const email=document.getElementById('my-email').value.trim();
+  const err=document.getElementById('e-myemail');err.classList.remove('on');
+  if(!email||!email.includes('@')){err.textContent='Enter a valid email address.';err.classList.add('on');return}
+  try{
+    const res=await fetch('/api/auth/my-email',{method:'POST',credentials:'same-origin',headers:jsonHeaders,
+      body:JSON.stringify({email})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok){err.textContent=j.detail||'Could not save the email address.';err.classList.add('on');return}
+    if(authUser)authUser.email=j.email;
+    toast('Email saved');draw();
+  }catch(e){err.textContent='Could not reach the server.';err.classList.add('on')}
 }
 async function submitChangePassword(){
   const oldP=document.getElementById('pw-old').value,newP=document.getElementById('pw-new').value,new2=document.getElementById('pw-new2').value;
