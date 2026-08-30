@@ -1145,6 +1145,20 @@ function draw(){
   v.innerHTML=({dash:vDash,mine:vMine,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
     aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
 }
+/* draw() replaces view.innerHTML, so the element being typed into is thrown
+   away and rebuilt from the template. The new input carries the right value
+   but has no focus and no caret, which stops typing dead after one keystroke.
+   Redraw, then put focus and the caret back exactly where they were. */
+function drawKeepCaret(id){
+  const a=document.activeElement;
+  const same=a&&a.id===id;
+  const start=same?a.selectionStart:null, end=same?a.selectionEnd:null;
+  draw();
+  const n=document.getElementById(id);
+  if(!n)return;
+  n.focus();
+  if(start!==null){try{n.setSelectionRange(start,end)}catch(e){}}
+}
 /* chips: optional array of {label, tone} built from REAL derived counts —
    rendered on the left under the subtitle; extra: action buttons, right. */
 const head=(k,extra='',chips=[])=>{const[t,d]=TITLES[k];
@@ -1852,8 +1866,8 @@ function vReleaseGrid(){
     ${(rflt.q||rflt.scope!=='all'||rflt.sort!=='nameAsc')?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
     <div class="b">
     <div class="fg">
-      <div><label>Search</label><input value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
-        oninput="rflt.q=this.value;rflt.page=1;clearTimeout(window._rf);window._rf=setTimeout(draw,220)"></div>
+      <div><label>Search</label><input id="rfq" value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
+        oninput="rflt.q=this.value;rflt.page=1;clearTimeout(window._rf);window._rf=setTimeout(()=>drawKeepCaret('rfq'),220)"></div>
       <div><label>Show</label><select onchange="setRF('scope',this.value)">
         ${REL_SCOPES.map(sc=>`<option value="${sc.k}" ${rflt.scope===sc.k?'selected':''}>${E(sc.nm)}</option>`).join('')}
       </select></div>
@@ -2187,8 +2201,8 @@ function vConflicts(){
     ${cfFiltersActive?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
     <div class="b">
     <div class="fg">
-      <div><label>Search</label><input value="${E(cflt.q)}" placeholder="Wave, Feature#, Story#, description, developers"
-        oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(draw,220)"></div>
+      <div><label>Search</label><input id="cfq" value="${E(cflt.q)}" placeholder="Wave, Feature#, Story#, description, developers"
+        oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(()=>drawKeepCaret('cfq'),220)"></div>
       <div><label>Progress</label><select onchange="setCF('progress',this.value)">
         ${CF_PROGRESS.map(o=>`<option value="${o.k}" ${cflt.progress===o.k?'selected':''}>${E(o.nm)}</option>`).join('')}
       </select></div>
