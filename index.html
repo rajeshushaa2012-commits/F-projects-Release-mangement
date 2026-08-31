@@ -250,6 +250,12 @@ body.auth .body{padding:0;max-width:none}
 .phchip.go i{background:#8FE3B8}.phchip.wait i{background:#FBD98B}
 .phchip.stop i{background:#F7ADA2}.phchip.teal i{background:#6FD8DE}
 @media(max-width:920px){.ph{padding:20px 18px;border-radius:14px}.ph h1{font-size:23px}}
+.rtabs{display:flex;gap:4px;margin:0 0 20px;border-bottom:2px solid var(--line);flex-wrap:wrap}
+.rtab{appearance:none;background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-2px;
+  padding:11px 18px;font:inherit;font-size:14px;font-weight:600;color:var(--mut);cursor:pointer;
+  border-radius:8px 8px 0 0;transition:color .12s,border-color .12s,background .12s}
+.rtab:hover{color:var(--ink);background:var(--sunk)}
+.rtab.on{color:var(--teal);border-bottom-color:var(--teal)}
 
 /* ── dashboard hero band ────────────────────
    A deep navy→teal gradient panel anchoring the landing page, with the
@@ -1111,9 +1117,7 @@ const NAV=[
  {g:'Overview',items:[
    {k:'dash',l:'Dashboard',ic:'🏠'},
    {k:'mine',l:'My pending actions',ic:'⏳',ct:()=>pendingForMe().length,alert:1},
-   {k:'myrel',l:'My Release',ic:'📦',ct:()=>rels.length},
-   {k:'newdev',l:'New Development',ic:'🆕',ct:()=>rels.length},
-   {k:'bms',l:'BMS Release',ic:'🏛️'},
+   {k:'myrel',l:'Release Management',ic:'📦',ct:()=>rels.length,keys:['myrel','newdev','bms']},
    {k:'cal', l:'Release calendar',ic:'📅'},
    {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>rels.length}]},
  {g:'Messages',items:[
@@ -1142,7 +1146,8 @@ function drawNav(){
       if(it.perm&&!hasPerm(it.perm))return;
       if(it.permAny&&!it.permAny.some(hasPerm))return;
       const n=it.ct?it.ct():0;
-      h+=`<div class="ni ${view===it.k?'on':''}" onclick="go('${it.k}')"><span class="ic">${it.ic||''}</span><span>${it.l}</span>
+      const active=it.keys?it.keys.includes(view):view===it.k;
+      h+=`<div class="ni ${active?'on':''}" onclick="go('${it.k}')"><span class="ic">${it.ic||''}</span><span>${it.l}</span>
         ${n?(it.alert?`<span class="dt"></span>`:`<span class="ct">${n}</span>`):''}</div>`;
     });
   });
@@ -1193,7 +1198,7 @@ function draw(){
   document.body.classList.remove('auth');
   drawNav();
   document.getElementById('crumb').textContent=
-    (NAV.find(g=>g.items.some(i=>i.k===view))||{g:'Overview'}).g;
+    (NAV.find(g=>g.items.some(i=>i.k===view||(i.keys&&i.keys.includes(view))))||{g:'Overview'}).g;
   const v=document.getElementById('view');
   if(view==='mypw'){v.innerHTML=vMypw();return}
   if(view==='accts'){
@@ -1863,6 +1868,15 @@ function gridColumns(){
      newdev — full editable New Development grid (create/edit/delete).
      bms    — same records, read-only.
    All three show the same shared rels. */
+/* Internal tab strip for the single "Release Management" page.
+   The three tabs reuse the existing view keys (myrel/newdev/bms) so all
+   grid logic downstream stays unchanged; switching just resets the pager. */
+function relTab(k){rflt.page=1;editingRelId=null;draftRelease=null;go(k)}
+function releaseTabs(cur){
+  const tabs=[['myrel','My Release'],['newdev','New Development'],['bms','BMS Release']];
+  return `<div class="rtabs">${tabs.map(([k,l])=>
+    `<button class="rtab ${cur===k?'on':''}" onclick="relTab('${k}')">${E(l)}</button>`).join('')}</div>`;
+}
 function vReleaseGrid(){
   const isNewDev=view==='newdev';
   const isMine=view==='myrel';
@@ -1884,7 +1898,7 @@ function vReleaseGrid(){
   const doneN=rels.filter(r=>r.status==='COMPLETED').length;
   const rowActions=r=>{
     if(isMine)return `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-      <button class="bt s p" onclick="go('newdev')">New Development</button>
+      <button class="bt s p" onclick="relTab('newdev')">New Development</button>
       <button class="bt s" onclick="openR('${r.id}')">View</button></td>`;
     if(!showActionCol)return '';
     return `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
@@ -1899,6 +1913,7 @@ function vReleaseGrid(){
       {label:`${inprog} in progress`,tone:'teal'},
       {label:`${doneN} completed`,tone:'go'}
     ])+
+    releaseTabs(view)+
     (view==='bms'?`<div class="sec"><div class="mt">Read-only view — the same New Development records. Open New Development to edit.</div></div>`:'')+
     (isNewDev?releasePipeline():'')+`
   <div class="sec c"><div class="h"><h3>Find an item</h3>
