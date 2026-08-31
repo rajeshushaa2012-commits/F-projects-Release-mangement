@@ -1897,23 +1897,21 @@ function vReleaseGrid(){
   const inprog=rels.filter(r=>r.status==='INPROGRESS').length;
   const doneN=rels.filter(r=>r.status==='COMPLETED').length;
   const rowActions=r=>{
+    const expanded=expandedRelId===r.id;
+    const viewBtn=`<button class="bt s" onclick="toggleRelExpand('${r.id}')">${expanded?'Hide':'View'}</button>`;
     if(isMine)return `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-      <button class="bt s p" onclick="relTab('newdev')">New Development</button>
-      <button class="bt s" onclick="openR('${r.id}')">View</button></td>`;
+      ${viewBtn}
+      <button class="bt s" onclick="relTab('newdev');editRelRow('${r.id}')">Edit</button>
+      <button class="bt s p" onclick="relTab('newdev')">New Development</button></td>`;
     if(!showActionCol)return '';
     return `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-      <button class="bt s" onclick="openR('${r.id}')">View</button>
+      ${viewBtn}
       ${canEditHere?`<button class="bt s" onclick="editRelRow('${r.id}')">Edit</button>`:''}
+      ${canCreateHere?`<button class="bt s p" onclick="mNewRow()">Add</button>`:''}
       ${canDeleteHere?`<button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button>`:''}
     </td>`;
   };
-  return head(headKey,(canCreateHere?`<button class="bt p" onclick="mNewRow()">New item</button>`:'')+
-    `<button class="bt" onclick="exportReleaseGridCsv('${view}')">Export</button>`,[
-      {label:`${rels.length} item${rels.length!==1?'s':''}`},
-      {label:`${inprog} in progress`,tone:'teal'},
-      {label:`${doneN} completed`,tone:'go'}
-    ])+
-    releaseTabs(view)+
+  return releaseTabs(view)+
     (view==='bms'?`<div class="sec"><div class="mt">Read-only view — the same New Development records. Open New Development to edit.</div></div>`:'')+
     (isNewDev?releasePipeline():'')+`
   <div class="sec c"><div class="h"><h3>Find an item</h3>
@@ -1932,7 +1930,8 @@ function vReleaseGrid(){
 
   <div class="c"><div class="h"><h3>${E(TITLES[headKey][0])} · ${all.length}</h3>
     <div class="r"><span class="tag">${editable?'Editable':'Read-only'}</span>
-      <span class="tag">${cols.length} columns</span></div></div>
+      <span class="tag">${cols.length} columns</span>
+      <button class="bt s" onclick="exportReleaseGridCsv('${view}')">Export</button></div></div>
     <div class="b flush">${(pageRows.length||showDraft)?`
     <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
     <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
@@ -1941,10 +1940,13 @@ function vReleaseGrid(){
       ${showDraft?renderEditRow(draftRelease,true):''}
       ${pageRows.map(r=>{
         if(isNewDev&&editingRelId===r.id)return renderEditRow(r,false);
-        return `<tr class="k" onclick="openR('${r.id}')">
+        const colCount=cols.length+(showActionCol?1:0);
+        const detail=expandedRelId===r.id?`<tr class="expand"><td colspan="${colCount}" style="background:var(--sunk);padding:0">
+          <div style="padding:16px 20px">${relInlineDetail(r)}</div></td></tr>`:'';
+        return `<tr class="k" onclick="toggleRelExpand('${r.id}')">
       ${cols.map(c=>`<td style="white-space:nowrap">${c.cell(r)}</td>`).join('')}
       ${rowActions(r)}
-    </tr>`;
+    </tr>${detail}`;
       }).join('')}
     </tbody></table></div>
     <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -2158,8 +2160,11 @@ function vConflicts(){
     ${cfFiltersActive?`<div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>`:''}
   </div></div>`;
 
+  const canDeleteHere=hasPerm('delete_release');
   const gridCard=`<div class="c"><div class="h"><h3>All New Development records · ${all.length}</h3>
-    <div class="r"><span class="tag">${cols.length+1} columns</span></div></div>
+    <div class="r"><span class="tag">${cols.length+1} columns</span>
+      ${canEditHere?`<button class="bt s p" onclick="mNewConflictRow()">Add</button>`:''}
+      <button class="bt s" onclick="exportConflictsCsv()">Export</button></div></div>
     <div class="b flush">${(pageRows.length||showDraft)?`
     <div style="overflow:auto;max-height:70vh"><table class="xgrid" style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
     <thead><tr><th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${SLNO_W}px">Sl.no</th>
@@ -2169,14 +2174,20 @@ function vConflicts(){
       ${showDraft?renderCflEditRow(draftCfl,true):''}
       ${pageRows.map((r,i)=>{
         if(editingCflId===r.id)return renderCflEditRow(r,false);
-        return `<tr>
+        const colCount=cols.length+1+(showActionCol?1:0);
+        const expanded=expandedRelId===r.id;
+        const detail=expanded?`<tr class="expand"><td colspan="${colCount}" style="background:var(--sunk);padding:0">
+          <div style="padding:16px 20px">${relInlineDetail(r)}</div></td></tr>`:'';
+        return `<tr class="k" onclick="toggleRelExpand('${r.id}')">
       <td class="mono" style="font-size:12px;color:var(--mut2)">${pageStart+i+1}</td>
       ${cols.map(col=>`<td style="white-space:nowrap">${cfCell(r,col)}</td>`).join('')}
-      ${showActionCol?`<td style="text-align:right;white-space:nowrap">
+      ${showActionCol?`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+        <button class="bt s" onclick="toggleRelExpand('${r.id}')">${expanded?'Hide':'View'}</button>
         <button class="bt s" onclick="editCflRow('${r.id}')">Edit</button>
-        <button class="bt s" onclick="openR('${r.id}')">View</button>
+        <button class="bt s p" onclick="mNewConflictRow()">Add</button>
+        ${canDeleteHere?`<button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button>`:''}
       </td>`:''}
-    </tr>`;
+    </tr>${detail}`;
       }).join('')}
     </tbody></table></div>
     <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -2193,11 +2204,7 @@ function vConflicts(){
       <button class="bt p" style="margin-top:14px" onclick="go('newdev')">Go to New Development</button></div>`)}
   </div></div>`;
 
-  return head('cft',(canEditHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
-    `<button class="bt" onclick="exportConflictsCsv()">Export</button>`,[
-      {label:`${rels.length} record${rels.length!==1?'s':''}`},
-      {label:'Shared with New Development',tone:'teal'}
-    ])+filterToolbar+`<div class="sec">${gridCard}</div>`;
+  return filterToolbar+`<div class="sec">${gridCard}</div>`;
 }
 /* Approval-group cards show how many approval requests are actually
    open at that gate right now — real routing state, not filler. */
@@ -2929,7 +2936,33 @@ function doEditMilestone(rid,key){
    for New Development: Jira #, Team, Activity, Current Status, Date,
    Assignee. Only one row (draft or existing) is ever being edited at a
    time. */
-let editingRelId=null, draftRelease=null;
+let editingRelId=null, draftRelease=null, expandedRelId=null;
+function toggleRelExpand(rid){expandedRelId=(expandedRelId===rid?null:rid);draw()}
+/* Inline expandable detail shown in-row (no separate detail page).
+   Read-only summary of the record's key fields, JIRA objects and milestones. */
+function relInlineDetail(r){
+  const kv=(k,v)=>`<div class="k">${E(k)}</div><div>${v||'<span style="color:var(--mut2)">—</span>'}</div>`;
+  const jo=r.jiraObjects||{};
+  const joCount=Object.keys(jo).reduce((s,t)=>s+((jo[t]||[]).length),0);
+  const ms=(r.milestones||{});
+  const msRows=Object.keys(ms).filter(k=>ms[k]).map(k=>`<span class="tag">${E(k)}: ${E(String(ms[k]))}</span>`).join(' ')||'<span style="color:var(--mut2)">No milestones set</span>';
+  return `<div class="kv" style="margin-bottom:12px">
+    ${kv('Summary',r.nm?E(r.nm):'')}
+    ${kv('Jira #',r.jira?E(r.jira):'')}
+    ${kv('Team',r.team?E(r.team):'')}
+    ${kv('Activity',AL(r.activity)?E(AL(r.activity)):'')}
+    ${kv('Current Status',stt(r.status))}
+    ${kv('Date',r.date?fd(r.date):'')}
+    ${kv('Assignee',r.assignee?E(r.assignee):'')}
+    ${kv('PO',r.po?E(r.po):'')}
+    ${kv('Scrum Master',r.scrum?E(r.scrum):'')}
+    ${kv('Business Owner',r.bizOwner?E(r.bizOwner):'')}
+    ${kv('Finance UAT Tester',r.financeUat?E(r.financeUat):'')}
+  </div>
+  <div style="font-weight:600;font-size:12.5px;margin:8px 0 6px">JIRA Objects (${joCount})</div>
+  <div style="font-weight:600;font-size:12.5px;margin:8px 0 6px">Milestones</div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px">${msRows}</div>`;
+}
 function mNewRow(){
   if(draftRelease)return;
   draftRelease={jira:'',team:'',nm:'',activity:'DEVELOPMENT',status:'INPROGRESS',
