@@ -2029,9 +2029,9 @@ function joSave(rid,type,i){
   }else{finish();}
 }
 let joEdit={};
-function joSection(r,rid){
+function joSection(r,rid,readOnly){
   rid=rid||r.id;
-  const editable=canEditRelease(r);
+  const editable=!readOnly&&canEditRelease(r);
   const jo=r.jiraObjects||blankJiraObjects();
   const total=JIRA_OBJECT_TYPES.reduce((s,t)=>s+((jo[t.key]||[]).length),0);
   const fileCell=o=>o.file
@@ -2174,10 +2174,12 @@ function cfCell(r,col){
   const v=r[col.key];
   return v?E(v):DASH;
 }
+/* Conflict Tracker is VIEW ONLY. It is an automatic, read-only projection
+   of the My Release + New Development records (`rels`). No Add/Edit/Delete
+   here — rows update whenever those source records change. The expanded
+   detail is rendered read-only too. */
 function vConflicts(){
-  const canEditHere=canEdit();
-  const showActionCol=canEditHere;
-  const showDraft=canEditHere&&editingCflId==='draft'&&draftCfl;
+  const showActionCol=true; // action column holds only the read-only View toggle
   const all=filteredConflicts();
   const totalPages=Math.max(1,Math.ceil(all.length/CF_PAGE_SIZE));
   if(cflt.page>totalPages)cflt.page=totalPages;
@@ -2185,7 +2187,7 @@ function vConflicts(){
   const pageRows=all.slice(pageStart,pageStart+CF_PAGE_SIZE);
   const cols=CF_COLS;
   const SLNO_W=64;
-  const tableWidth=SLNO_W+cols.reduce((s,c)=>s+c.w,0)+(showActionCol?170:0);
+  const tableWidth=SLNO_W+cols.reduce((s,c)=>s+c.w,0)+(showActionCol?110:0);
   const cfFiltersActive=cflt.q||cflt.sort!=='jiraAsc';
 
   const filterToolbar=`<div class="sec c"><div class="h"><h3>Find a record</h3>
@@ -2202,32 +2204,25 @@ function vConflicts(){
     ${cfFiltersActive?`<div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>`:''}
   </div></div>`;
 
-  const canDeleteHere=hasPerm('delete_release');
   const gridCard=`<div class="c"><div class="h"><h3>All New Development records · ${all.length}</h3>
-    <div class="r"><span class="tag">${cols.length+1} columns</span>
-      ${canEditHere?`<button class="bt s p" onclick="mNewConflictRow()">Add</button>`:''}
+    <div class="r"><span class="tag">View only</span><span class="tag">${cols.length+1} columns</span>
       <button class="bt s" onclick="exportConflictsCsv()">Export</button></div></div>
-    <div class="b flush">${(pageRows.length||showDraft)?`
+    <div class="b flush">${pageRows.length?`
     <div style="overflow:auto;max-height:70vh"><table class="xgrid" style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
     <thead><tr><th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${SLNO_W}px">Sl.no</th>
       ${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
       ${showActionCol?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
     <tbody>
-      ${showDraft?renderCflEditRow(draftCfl,true):''}
       ${pageRows.map((r,i)=>{
-        if(editingCflId===r.id)return renderCflEditRow(r,false);
         const colCount=cols.length+1+(showActionCol?1:0);
         const expanded=expandedRelId===r.id;
         const detail=expanded?`<tr class="expand"><td colspan="${colCount}" style="background:var(--sunk);padding:0">
-          <div style="padding:16px 20px">${relInlineDetail(r)}</div></td></tr>`:'';
+          <div style="padding:16px 20px">${relInlineDetail(r,true)}</div></td></tr>`:'';
         return `<tr class="k" onclick="toggleRelExpand('${r.id}')">
       <td class="mono" style="font-size:12px;color:var(--mut2)">${pageStart+i+1}</td>
       ${cols.map(col=>`<td style="white-space:nowrap">${cfCell(r,col)}</td>`).join('')}
       ${showActionCol?`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
         <button class="bt s" onclick="toggleRelExpand('${r.id}')">${expanded?'Hide':'View'}</button>
-        <button class="bt s" onclick="editCflRow('${r.id}')">Edit</button>
-        <button class="bt s p" onclick="mNewConflictRow()">Add</button>
-        ${canDeleteHere?`<button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button>`:''}
       </td>`:''}
     </tr>${detail}`;
       }).join('')}
@@ -2253,61 +2248,10 @@ function vConflicts(){
 function openApprovalsForGroup(gid){
   return apps_.filter(a=>a.status==='open'&&a.grp===gid).length;
 }
-/* ═══ Excel-style inline row editing ═══════
-   Same records as New Development — editing a row here writes straight
-   back to that New Development record and persists. "+ Add Row" inserts a
-   blank draft that becomes a new New Development record on save. */
-function mNewConflictRow(){
-  if(editingCflId==='draft')return;
-  draftCfl={jira:'',team:'',activity:'DEVELOPMENT',status:'INPROGRESS',po:'',scrum:'',date:'',assignee:''};
-  editingCflId='draft';
-  draw();
-}
-function editCflRow(id){draftCfl=null;editingCflId=id;draw()}
-function cancelCflEdit(){editingCflId=null;draftCfl=null;draw()}
-function renderCflEditRow(r,isDraft){
-  let html=`<tr class="editing"><td class="mono" style="font-size:12px;color:var(--mut2)">${isDraft?'—':''}</td>`;
-  CF_COLS.forEach(col=>{
-    let field;
-    if(col.opts==='activity'){
-      field=`<select id="cf-e-${col.key}" style="width:100%;min-width:${col.w}px">${ACTIVITIES.map(a=>
-        `<option value="${a.k}" ${(r[col.key]||'')===a.k?'selected':''}>${E(a.nm)}</option>`).join('')}</select>`;
-    }else if(col.opts==='status'){
-      field=`<select id="cf-e-${col.key}" style="width:100%;min-width:${col.w}px">${STATUSES.map(s=>
-        `<option value="${s.k}" ${(r[col.key]||'')===s.k?'selected':''}>${E(s.nm)}</option>`).join('')}</select>`;
-    }else{
-      const type=col.type==='date'?'date':'text';
-      field=`<input type="${type}" id="cf-e-${col.key}" value="${E(r[col.key]||'')}" style="width:100%;min-width:${col.w}px">`;
-    }
-    html+=`<td onclick="event.stopPropagation()">${field}</td>`;
-  });
-  html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-    <button class="bt p s" onclick="saveCflRow('${isDraft?'draft':r.id}')">Save</button>
-    <button class="bt s" onclick="cancelCflEdit()">Cancel</button></td>`;
-  return html+'</tr>';
-}
-function saveCflRow(id){
-  const gv=k=>{const el=document.getElementById('cf-e-'+k);return el?el.value.trim():''};
-  const jira=gv('jira');
-  if(!jira){toast('Jira # is required');return}
-  const vals={jira,team:gv('team'),activity:gv('activity')||'DEVELOPMENT',status:gv('status')||'INPROGRESS',
-    po:gv('po'),scrum:gv('scrum'),date:gv('date')||null,assignee:gv('assignee')};
-  if(id==='draft'){
-    const r={id:nid('R'),ref:jira,jira:vals.jira,team:vals.team,nm:'',activity:vals.activity,status:vals.status,
-      assignee:vals.assignee,date:vals.date,po:vals.po,scrum:vals.scrum,bizOwner:null,financeUat:null,comments:'',
-      jiraObjects:blankJiraObjects(),milestones:blankMilestones(),cmts:[],atts:[]};
-    rels.push(r);
-    logAudit(`Added New Development record — ${jira}`,null,'—','—');
-    editingCflId=null;draftCfl=null;
-    draw();toast('Record saved');persist();
-  }else{
-    const r=R(id);if(!r)return;
-    Object.assign(r,vals);
-    logAudit(`Updated New Development record — ${r.jira}`,null,'—','—');
-    editingCflId=null;
-    draw();toast('Record updated');persist();
-  }
-}
+/* ═══ Conflict Tracker is VIEW ONLY ═══════
+   No Add/Edit/Delete. The grid is a live, read-only projection of the
+   My Release + New Development records (`rels`); it updates automatically
+   whenever those source records change. Export (read-only) is retained. */
 function exportConflictsCsv(){
   const rows=[['Sl.no',...CF_COLS.map(c=>c.h)]];
   filteredConflicts().forEach((r,i)=>rows.push([i+1,...CF_COLS.map(col=>{
@@ -2982,7 +2926,7 @@ let editingRelId=null, draftRelease=null, expandedRelId=null;
 function toggleRelExpand(rid){expandedRelId=(expandedRelId===rid?null:rid);draw()}
 /* Inline expandable detail shown in-row (no separate detail page).
    Read-only summary of the record's key fields, JIRA objects and milestones. */
-function relInlineDetail(r){
+function relInlineDetail(r,readOnly){
   const kv=(k,v)=>`<div class="k">${E(k)}</div><div>${v||'<span style="color:var(--mut2)">—</span>'}</div>`;
   const jo=r.jiraObjects||{};
   const joCount=Object.keys(jo).reduce((s,t)=>s+((jo[t]||[]).length),0);
@@ -3001,7 +2945,7 @@ function relInlineDetail(r){
     ${kv('Business Owner',r.bizOwner?E(r.bizOwner):'')}
     ${kv('Finance UAT Tester',r.financeUat?E(r.financeUat):'')}
   </div>
-  <div style="margin:12px 0">${joSection(r)}</div>
+  <div style="margin:12px 0">${joSection(r,r.id,readOnly)}</div>
   <div style="font-weight:600;font-size:12.5px;margin:8px 0 6px">Milestones</div>
   <div style="display:flex;flex-wrap:wrap;gap:6px">${msRows}</div>`;
 }
