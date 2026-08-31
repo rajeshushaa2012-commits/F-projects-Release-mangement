@@ -656,33 +656,46 @@ tbody tr.editing select{padding-right:26px;background-position:right 8px center}
 <div class="toast" id="toast"></div>
 
 <script>
-/* ═══ stage model ═══════════════════════ */
-/* Seven steps, in the order a release actually moves. Two of them are gates:
-   UAT Testing (business signs off on what they tested) and Production. The
-   'uatt' key is the business gate — releases saved under the older 6-stage
-   model, where that gate lived on 'uat', are migrated by migrateStages(). */
-const STAGES=[
-  {k:'groom',nm:'Grooming',           sm:'Scope agreed',        gate:false},
-  {k:'anal', nm:'Analysis',           sm:'Requirements agreed', gate:false},
-  {k:'dev',  nm:'Development',        sm:'Built in dev',        gate:false},
-  {k:'uat',  nm:'UAT',                sm:'Deployed to UAT',     gate:false},
-  {k:'uatt', nm:'UAT Testing',        sm:'Business validation', gate:true},
-  {k:'prod', nm:'Production',         sm:'Move to production',  gate:true},
-  {k:'done', nm:'Released / Completed',sm:'Confirmed live',     gate:false}
+/* ═══ activity model ════════════════════
+   A New Development record moves through six activities, in this fixed
+   order. Activity replaces the old approval-gate workflow entirely — there
+   are no gates, no sign-off records and no approval groups any more. The
+   stored value on a record is the uppercase key (r.activity), e.g.
+   'CODE REVIEW'. Status is a separate three-value field (r.status). */
+const ACTIVITIES=[
+  {k:'DEVELOPMENT',   nm:'Development'},
+  {k:'TESTING',       nm:'Testing'},
+  {k:'CODE REVIEW',   nm:'Code Review'},
+  {k:'UAT',           nm:'UAT'},
+  {k:'KT TO SUPPORT', nm:'KT to Support'},
+  {k:'RELEASE',       nm:'Release'}
 ];
+const ACT_KEYS=ACTIVITIES.map(a=>a.k);
+const AL=k=>(ACTIVITIES.find(a=>a.k===k)||{}).nm||k;
+/* Status has exactly three values. cls maps to the existing chip styles. */
+const STATUSES=[
+  {k:'INPROGRESS',nm:'In Progress',cls:'s-prog'},
+  {k:'ON-HOLD',   nm:'On-Hold',    cls:'s-wait'},
+  {k:'COMPLETED', nm:'Completed',  cls:'s-ok'}
+];
+const STATUS_KEYS=STATUSES.map(s=>s.k);
+const SU=k=>(STATUSES.find(s=>s.k===k)||{}).nm||k;
+/* Legacy helpers kept as thin shims so any residual reference resolves
+   without throwing. STAGES now mirrors ACTIVITIES. */
+const STAGES=ACTIVITIES.slice();
 const SI=k=>STAGES.findIndex(s=>s.k===k);
 const SL=k=>(STAGES.find(s=>s.k===k)||{}).nm||k;
-const STATES={notStarted:['Not started','s-none'],inProgress:['In progress','s-prog'],
-  waiting:['Waiting for approval','s-wait'],approved:['Approved','s-ok'],
-  rejected:['Rejected','s-bad'],completed:['Completed','s-ok'],blocked:['Blocked','s-bad']};
+const STATES={INPROGRESS:['In Progress','s-prog'],'ON-HOLD':['On-Hold','s-wait'],
+  COMPLETED:['Completed','s-ok'],notStarted:['Not started','s-none'],
+  inProgress:['In progress','s-prog'],completed:['Completed','s-ok'],blocked:['Blocked','s-bad']};
 
-/* ═══ release milestones (Phase 3) ══════
-   A separate checklist per release, independent of the Grooming→Production
-   gate workflow above — this is the Excel-derived tracking list, not a
-   replacement for the existing approval gates. */
-/* Names below are the exact header text from Release.xlsx (row 2) — do not
-   reword them, even the asterisk/parenthetical bits, since the grid must
-   reproduce the source columns verbatim. */
+/* ═══ release milestones ═════════════════
+   The 13 Excel milestone columns carried verbatim from Project_Tracker.
+   Each record stores them as a flat { key: rawValue } object on
+   r.milestones — the raw Excel value (an ISO-ish date string, "N/A",
+   "No Finance Impact", or null), shown as-is and editable inline. */
+/* Names below are the exact header text from the tracker — do not reword
+   them, even the asterisk/parenthetical bits. */
 const MILESTONES=[
  {key:'idr',   name:'Internal Design Review'},
  {key:'bms',   name:"*NEW* BMS French Translation (Q'Bill 96)"},
@@ -699,22 +712,27 @@ const MILESTONES=[
  {key:'prod',  name:'Production Release Date'}
 ];
 const MS=key=>MILESTONES.find(m=>m.key===key)||{name:key};
-const blankMilestones=()=>MILESTONES.map(m=>({key:m.key,owner:null,ideal:null,actual:null,
-  status:'notStarted',comments:'',approved:false,approvedBy:null,approvedOn:null}));
+const blankMilestones=()=>{const o={};MILESTONES.forEach(m=>o[m.key]=null);return o};
+/* The five JIRA Object buckets shown inside each New Development record. */
+const JIRA_OBJECT_TYPES=[
+ {key:'fmb',    nm:'FMB'},
+ {key:'sql',    nm:'SQL'},
+ {key:'plsql',  nm:'PLSQL'},
+ {key:'reports',nm:'Reports'},
+ {key:'others', nm:'Others'}
+];
+const blankJiraObjects=()=>{const o={};JIRA_OBJECT_TYPES.forEach(t=>o[t.key]=[]);return o};
 
 /* ═══ release categories ═════════════════
-   Three tabs on one Release Management page, all three showing the exact
-   same release records — there is no per-record category or separate
-   dataset any more. "editable" here describes the TAB, not the record:
-   viewing under My Team Release shows row-level edit/delete/create
-   controls; New Release and BMS Release show the identical rows read-only,
-   as plain reference views. Editing a release from any tab (or from its
-   detail page) changes the one shared record, so it's immediately visible
-   under all three tabs. */
+   The tabs shown on the New Development grid. All show the exact same
+   New Development records (rels) — there is no per-record category or
+   separate dataset. "editable" describes the TAB: New Development shows
+   row-level edit/delete/create controls; BMS Release shows the identical
+   rows read-only. Editing a record from any tab (or its detail page)
+   changes the one shared record, visible everywhere. */
 const RELEASE_CATEGORIES=[
- {key:'my_team',    nav:'My Team Release', ic:'📦', editable:true},
- {key:'new_release',nav:'New Release',      ic:'🆕', editable:false},
- {key:'bms',         nav:'BMS Release',      ic:'🏛️', editable:false}
+ {key:'new_dev',nav:'New Development', ic:'🆕', editable:true},
+ {key:'bms',    nav:'BMS Release',      ic:'🏛️', editable:false}
 ];
 const RC=key=>RELEASE_CATEGORIES.find(c=>c.key===key)||RELEASE_CATEGORIES[0];
 
@@ -724,45 +742,28 @@ let uid=200; const nid=p=>p+(++uid);
 let users=[]; const U=id=>users.find(u=>u.id===id)||{nm:'—',em:'—'};
 let comps=[]; const C=id=>comps.find(c=>c.id===id)||{nm:'—',owners:[]};
 let groups=[]; const G=id=>groups.find(g=>g.id===id)||{nm:'—',members:[]};
-const blank=cur=>{const o={};STAGES.forEach((s,i)=>{o[s.k]=i<SI(cur)?'completed':(i===SI(cur)?'inProgress':'notStarted')});return o};
-/* Releases and approvals saved under the older 6-stage model used 'test' for
-   what is now Analysis, and put the business gate on 'uat'. UAT is now a
-   plain deploy step and the gate moved to 'uatt' (UAT Testing), so remap the
-   stored keys once on load. Anything already keyed to the new model is left
-   alone, and no release data other than these stage keys is touched. */
-const STAGE_SCHEMA=2;
+/* Normalizes a New Development record onto the current field model. Records
+   saved under the old gate workflow carried r.cur/r.st (stage keys) and no
+   activity/status; map the old stage to the closest Activity, default the
+   status, and ensure the JIRA-object buckets exist. New records already have
+   these fields, so this is idempotent. No record data is dropped. */
+const LEGACY_STAGE_TO_ACTIVITY={groom:'DEVELOPMENT',anal:'DEVELOPMENT',dev:'DEVELOPMENT',
+  test:'TESTING',uat:'UAT',uatt:'UAT',prod:'RELEASE',done:'RELEASE'};
 function migrateStages(){
   rels.forEach(r=>{
-    // Marked releases are already on the 7-stage model. Without this a release
-    // legitimately sitting at the NEW 'uat' step is indistinguishable from an
-    // un-migrated one and would get pushed to 'uatt' on every single load.
-    if(r.sv>=STAGE_SCHEMA)return;
-    const st=r.st||{};
-    // 'test' became Analysis.
-    if(st.test!==undefined){
-      if(st.anal===undefined||st.anal==='notStarted')st.anal=st.test;
-      delete st.test;
+    if(!ACT_KEYS.includes(r.activity))
+      r.activity=LEGACY_STAGE_TO_ACTIVITY[r.cur]||'DEVELOPMENT';
+    if(!STATUS_KEYS.includes(r.status)){
+      // done → COMPLETED; anything else defaults to INPROGRESS.
+      r.status=(r.cur==='done'||r.actual)?'COMPLETED':'INPROGRESS';
     }
-    if(r.cur==='test')r.cur='anal';
-    // Old 'uat' WAS the business approval gate, so anything parked there —
-    // whatever its state — belongs on 'uatt' now, and 'uat' becomes the
-    // plain deploy step it reached to get there.
-    if(r.cur==='uat'){
-      if(st.uatt===undefined||st.uatt==='notStarted')st.uatt=st.uat||'inProgress';
-      st.uat='completed';
-      r.cur='uatt';
-    }else if(['approved','rejected','waiting'].includes(st.uat)){
-      if(st.uatt===undefined||st.uatt==='notStarted')st.uatt=st.uat;
-      st.uat='completed';
-    }
-    STAGES.forEach(s=>{if(st[s.k]===undefined)st[s.k]='notStarted'});
-    r.st=st;
-    if(!STAGES.some(s=>s.k===r.cur))r.cur='groom';
-    r.sv=STAGE_SCHEMA;
+    if(typeof r.assignee!=='string')r.assignee='';
+    if(!r.jiraObjects||typeof r.jiraObjects!=='object')r.jiraObjects=blankJiraObjects();
+    else JIRA_OBJECT_TYPES.forEach(t=>{if(!Array.isArray(r.jiraObjects[t.key]))r.jiraObjects[t.key]=[]});
+    if(r.date===undefined)r.date=null;
+    // Old stage-map fields are no longer read; leave them if present but they
+    // are not required.
   });
-  // No approval can legitimately sit on 'uat' any more — it is not a gate.
-  apps_.forEach(a=>{if(a.stage==='uat')a.stage='uatt'});
-  groups.forEach(g=>{if(g.stage==='uat')g.stage='uatt'});
 }
 let rels=[]; const R=id=>rels.find(r=>r.id===id);
 let apps_=[];
@@ -772,72 +773,30 @@ let audit=[];
 let tmpl=[];
 let conflicts=[]; const CF=id=>conflicts.find(c=>c.id===id);
 
-/* ═══ conflict tracker → project tracker ═
-   Matches Project Tracker_2026.xlsx exactly: 18 columns per row (Sl.no is
-   a computed row number, not stored data — the other 17 map 1:1 to
-   CF_FIELDS below), organized into project-wise tabs using the workbook's
-   own sheet names. No conflict-specific fields (Severity, Object Type,
-   Resolution, etc.) — this is the Project Tracker structure, not a
-   conflict-specific redesign of it. */
-/* Project tabs — the exact sheet names from Project Tracker_2026.xlsx,
-   spelling/capitalization preserved as-is (e.g. "Ar Finance Extn"). Each
-   row belongs to exactly one project; unlike Release Management's tabs,
-   these are genuinely separate subsets of data, not shared views. */
-const PROJECT_NAMES=['AR Finance Base','Ar Finance Extn','Digital-Service Ops','Supply Chain',
-  'POA','Zenith','PG Quote to Order','EPROC','Release Team'];
-let conflictProject=PROJECT_NAMES[0];
-let editingCflId=null, draftConflict=null;
-function setConflictTab(name){conflictProject=name;cflt.page=1;editingCflId=null;draftConflict=null;draw()}
-/* The 17 stored columns, exact order — Sl.no (row position) is rendered
-   separately and is not part of this list. Date-typed columns get a
-   native date picker in the editor; Release Month gets a native month
-   picker (year+month only, no day) and displays as "Jun-26". */
-const CF_FIELDS=[
- {h:'Wave',key:'wave',w:110},
- {h:'Feature#',key:'feature',w:110},
- {h:'Story#',key:'story',w:110},
- {h:'Description',key:'description',w:280},
- {h:'Estimation',key:'estimation',w:100},
- {h:'Mode of release',key:'modeOfRelease',w:140},
- {h:'Release Month',key:'releaseMonth',w:130,type:'month'},
- {h:'Developers',key:'developers',w:150},
- {h:'Current Status',key:'currentStatus',w:160},
- {h:'SDD Review',key:'sddReview',w:130,type:'date'},
- {h:'Development',key:'development',w:130,type:'date'},
- {h:'Unit Testing',key:'unitTesting',w:130,type:'date'},
- {h:'Demo',key:'demo',w:120,type:'date'},
- {h:'Code Review',key:'codeReview',w:130,type:'date'},
- {h:'UAT',key:'uat',w:110,type:'date'},
- {h:'KT to Support',key:'ktToSupport',w:130,type:'date'},
- {h:'Prod',key:'prod',w:120,type:'date'},
+/* ═══ conflict tracker → shares New Development data ═
+   The Conflict Tracker is a second editable view over the SAME New
+   Development records (`rels`) — not a separate dataset. No project tabs,
+   no dashboards/charts/KPIs. Just an Excel-style grid you can search,
+   sort, edit and save; edits write straight back to the New Development
+   record and persist. Columns are rebased on the New Development record
+   model. The `conflicts` array (declared above) is retained empty so the
+   snapshot/STATE_KEYS contract with the backend still holds. */
+let editingCflId=null, draftCfl=null;
+/* Grid columns, rebased on the New Development record model. `opts` marks
+   the two dropdown columns (Activity, Status); `type:'date'` gets a native
+   date picker in the inline editor. */
+const CF_COLS=[
+ {h:'Jira #',key:'jira',w:120},
+ {h:'Team',key:'team',w:210},
+ {h:'Activity',key:'activity',w:150,opts:'activity'},
+ {h:'Current Status',key:'status',w:150,opts:'status'},
+ {h:'PO',key:'po',w:120},
+ {h:'Scrum Master',key:'scrum',w:140},
+ {h:'Date',key:'date',w:130,type:'date'},
+ {h:'Assignee',key:'assignee',w:150},
 ];
-let cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',progress:'all',sort:'default',page:1};
-/* Milestone-derived progress buckets, shared by the Conflict Tracker KPI
-   counts and the grid filter so a KPI's View action shows exactly the
-   rows it counted. Defined after CF_MILESTONE_FIELDS exists. */
-function cfProgressTest(k){
-  if(k==='completed')return c=>!!c.prod;
-  if(k==='pending')  return c=>!CF_MILESTONE_FIELDS.some(f=>c[f.key]);
-  if(k==='inprogress')return c=>!c.prod&&CF_MILESTONE_FIELDS.some(f=>c[f.key]);
-  if(k==='upcoming'){
-    const t=now().slice(0,10), in30=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
-    return c=>CF_MILESTONE_FIELDS.some(f=>c[f.key]&&c[f.key]>=t&&c[f.key]<=in30);
-  }
-  return ()=>true;
-}
-const CF_PROGRESS=[
-  {k:'all',nm:'All rows'},{k:'completed',nm:'Completed (reached Prod)'},
-  {k:'inprogress',nm:'In progress'},{k:'pending',nm:'Pending (not started)'},
-  {k:'upcoming',nm:'Upcoming milestones (30d)'},
-];
-/* Entry point used by Conflict Tracker KPI actions. */
-function goCfProgress(k){cflt.progress=k;cflt.page=1;draw();window.scrollTo(0,0)}
-const CF_PAGE_SIZE=15;
-/* The 8 milestone-date columns, in workflow order — derived from CF_FIELDS
-   rather than duplicated, so the insights panel can never drift out of
-   sync with the actual column list. Used only for the summary cards and
-   charts below; the grid/editor still iterate CF_FIELDS directly. */
-const CF_MILESTONE_FIELDS=CF_FIELDS.filter(f=>f.type==='date');
+let cflt={q:'',sort:'jiraAsc',page:1};
+const CF_PAGE_SIZE=20;
 
 /* ═══ server sync ═══════════════════════ */
 let emailConfigured=false,emailFrom=null;
@@ -861,7 +820,9 @@ async function checkEmailStatus(){
     if(r.ok){const j=await r.json();emailConfigured=j.configured;emailFrom=j.from}}
   catch(e){}
 }
-const RELEASE_TEXT_FIELDS=['workstream','jira','po','scrum','bizOwner','financeUat','comments'];
+/* Text fields carried on every New Development record. team/jira are the
+   Excel identity columns; the rest are the tracker's people/notes columns. */
+const RELEASE_TEXT_FIELDS=['team','jira','po','scrum','bizOwner','financeUat','comments'];
 function applyState(s){
   users=s.users;comps=s.comps;groups=s.groups;rels=s.rels;apps_=s.apps_;
   notifs=s.notifs;acts=s.acts;audit=s.audit;tmpl=s.tmpl;uid=Math.max(uid,s.uid||0);
@@ -870,20 +831,17 @@ function applyState(s){
     const fb=users.find(u=>u.role==='Admin'&&u.active)||users.find(u=>u.active)||users[0];
     if(fb)me=fb.id;
   }
-  // Backfill Phase 3 fields onto releases saved before they existed — no
-  // backend migration needed, and existing release data is never dropped.
+  // Backfill New Development fields onto records saved before they existed —
+  // no backend migration needed, and existing record data is never dropped.
   rels.forEach(r=>{
     RELEASE_TEXT_FIELDS.forEach(f=>{if(r[f]===undefined)r[f]=''});
-    if(!Array.isArray(r.milestones))r.milestones=blankMilestones();
-    else MILESTONES.forEach(m=>{if(!r.milestones.find(x=>x.key===m.key))r.milestones.push(blankMilestones().find(x=>x.key===m.key))});
+    // Milestones are a flat { key: rawValue } object of the Excel columns.
+    if(!r.milestones||typeof r.milestones!=='object'||Array.isArray(r.milestones))r.milestones=blankMilestones();
+    else MILESTONES.forEach(m=>{if(r.milestones[m.key]===undefined)r.milestones[m.key]=null});
   });
   migrateStages();
-  // Backfill Project Name and the 17 project-tracker fields onto rows
-  // saved under an earlier schema — existing values are never overwritten.
-  conflicts.forEach(c=>{
-    if(!PROJECT_NAMES.includes(c.project))c.project=PROJECT_NAMES[0];
-    CF_FIELDS.forEach(f=>{if(c[f.key]===undefined)c[f.key]=''});
-  });
+  // Conflict Tracker reads New Development records directly, so conflicts[]
+  // stays empty. Nothing to backfill here.
 }
 function snapshot(){return{uid,users,comps,groups,rels,apps_,notifs,acts,audit,tmpl,conflicts}}
 async function persist(){
@@ -911,7 +869,7 @@ function authShell(card){
           <div class="mk"><b>BMS</b><span>Release Management</span></div></div>
         <div class="auth-head">
           <h2>Every release,<br>one clear path.</h2>
-          <p>Grooming through production, with approvals recorded at every gate.</p>
+          <p>Development through release, tracked at every stage.</p>
           <div class="auth-gates"><i></i><i></i><i></i><i></i></div>
         </div>
         <div class="auth-foot">Sign in to view releases, conflicts and approvals.</div>
@@ -1132,42 +1090,17 @@ function send(ty,sub,to,body){
   sendEmail(to.map(id=>U(id).em).filter(e=>e&&e.includes('@')),sub,body||sub);
 }
 
-const openApp=(rid,stage)=>apps_.find(a=>a.rel===rid&&a.stage===stage&&a.status==='open');
 const appsFor=rid=>apps_.filter(a=>a.rel===rid).sort((a,b)=>b.on.localeCompare(a.on));
-const stageState=(r,k)=>r.st[k]||'notStarted';
-const grpFor=(r,stage)=>groups.find(g=>g.stage===stage&&g.members.some(m=>C(r.comp).owners.includes(m)))||groups.find(g=>g.stage===stage);
-function lastDec(rid,stage){const a=apps_.find(x=>x.rel===rid&&x.stage===stage&&x.status==='approved');
-  return a&&a.dec.length?a.dec[a.dec.length-1]:null}
-
-function canAdvance(r){
-  const i=SI(r.cur);
-  if(i>=STAGES.length-1)return[false,'This release is already complete.'];
-  const nx=STAGES[i+1],cs=stageState(r,r.cur);
-  if(cs==='waiting')return[false,'An approval request is open on this stage.'];
-  if(cs==='rejected')return[false,'This stage was rejected. Raise a new approval or return the release.'];
-  if(nx.k==='uat'&&stageState(r,'dev')!=='completed'&&r.cur!=='dev')return[false,'Development must be completed first.'];
-  if(nx.k==='prod'&&stageState(r,'uatt')!=='approved')return[false,'UAT Testing approval must be recorded before Production.'];
-  if(nx.k==='done'&&stageState(r,'prod')!=='approved')return[false,'Production approval must be recorded before completion.'];
-  if(STAGES[i].gate&&cs!=='approved')return[false,`${SL(r.cur)} approval must be recorded first.`];
-  return[true,''];
-}
-function canRequest(r,stage){
-  if(!STAGES.find(s=>s.k===stage)?.gate)return[false,''];
-  if(openApp(r.id,stage))return[false,'An approval request is already open.'];
-  if(stageState(r,stage)==='approved')return[false,'Already approved.'];
-  if(stage==='prod'&&!r.plan)return[false,'Set a planned production release date before requesting approval.'];
-  if(stage==='prod'&&stageState(r,'uatt')!=='approved')return[false,'UAT Testing approval is required first.'];
-  return[true,''];
-}
 
 /* ═══ nav ═══════════════════════════════ */
+/* Records that still need attention: anything not yet COMPLETED. Owned by
+   the acting user (or everyone, for an admin), plus any unacknowledged
+   change alerts. */
 function pendingForMe(){
   const out=[];
-  if(canEdit())rels.forEach(r=>{
-    if(r.owner!==me&&!isAdmin())return;
-    const a=openApp(r.id,r.cur);
-    if(a)out.push({k:'await',r,a});
-    else{const[ok]=canAdvance(r);if(ok&&r.cur!=='done')out.push({k:'move',r})}
+  rels.forEach(r=>{
+    if(r.status==='COMPLETED')return;
+    out.push({k:'work',r});
   });
   acts.forEach(v=>{if(C(v.comp).owners.includes(me)&&v.by!==me&&!v.ack.includes(me))out.push({k:'ack',v})});
   return out;
@@ -1178,9 +1111,11 @@ const NAV=[
  {g:'Overview',items:[
    {k:'dash',l:'Dashboard',ic:'🏠'},
    {k:'mine',l:'My pending actions',ic:'⏳',ct:()=>pendingForMe().length,alert:1},
-   {k:'relmgmt',l:'Release Management',ic:'📦',ct:()=>rels.length},
+   {k:'myrel',l:'My Release',ic:'📦',ct:()=>rels.length},
+   {k:'newdev',l:'New Development',ic:'🆕',ct:()=>rels.length},
+   {k:'bms',l:'BMS Release',ic:'🏛️'},
    {k:'cal', l:'Release calendar',ic:'📅'},
-   {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>conflicts.length}]},
+   {k:'cft', l:'Conflict Tracker',ic:'⚠️',perm:'view_conflicts',ct:()=>rels.length}]},
  {g:'Messages',items:[
    {k:'chg', l:'Change activity',ic:'🔔',ct:unackCount,alert:1},
    {k:'mail',l:'Compose email',ic:'✉️'},
@@ -1236,9 +1171,11 @@ function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
 /* ═══ router ════════════════════════════ */
 const TITLES={dash:['Dashboard','Everything that needs your eyes, in one place.'],
  mine:['My pending actions','Only the items waiting on you.'],
- relmgmt:['Release Management','One shared table structure — every field from Release.xlsx as its own column. My Team Release is editable; New Release and BMS Release are read-only reference lists.'],
+ myrel:['My Release','Every development item, with its team, activity and current status at a glance.'],
+ newdev:['My Release | New Development','New development items from the Project Tracker — edit activity, status, dates and JIRA objects inline.'],
+ bms:['BMS Release','BMS release items, drawn from the same New Development records.'],
  rel:['Release detail',''],cal:['Release calendar','Planned production releases by date.'],
- cft:['Conflict Tracker','Organized by project, matching Project Tracker_2026.xlsx.'],
+ cft:['Conflict Tracker','Every New Development item in one editable table.'],
  chg:['Change activity','Who pulled or applied changes, and who was told.'],
  mail:['Compose email','Send a one-off message to any address, right now.'],
  note:['Notification history','Every message the application has sent.'],
@@ -1269,7 +1206,7 @@ function draw(){
     v.innerHTML=vConflicts();return;
   }
   if(!hasPerm('view_releases')){v.innerHTML=vRO('You need the view_releases permission to see this page.');return}
-  if(view==='relmgmt'){v.innerHTML=vReleaseGrid();return}
+  if(view==='myrel'||view==='newdev'||view==='bms'){v.innerHTML=vReleaseGrid();return}
   v.innerHTML=({dash:vDash,mine:vMine,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
     aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
 }
@@ -1584,10 +1521,10 @@ function helpCard(){
       <div>
         <div style="font-family:var(--d);font-weight:700;font-size:15px;margin-bottom:6px">What is this page?</div>
         <div style="color:var(--ink2);font-size:13.5px;line-height:1.7">
-          BMS Release Management tracks each change (a "release") as it moves through steps: Grooming → Analysis →
-          Development → UAT → <b>UAT Testing</b> → <b>Production</b> → Released. The two bold steps need someone to
-          click Approve before the release can continue. The left menu: <b>Overview</b> is your day-to-day work,
-          <b>Messages</b> is everything sent or logged, <b>Settings</b> is who's who and how approvals are set up.
+          BMS Release Management tracks each change (a "release") as it moves through stages:
+          Development → Testing → Code Review → UAT → KT to Support → Release. Set the Activity and
+          Current Status on each record to reflect where it stands. The left menu: <b>Overview</b> is your
+          day-to-day work, <b>Messages</b> is everything sent or logged, <b>Settings</b> is who's who.
         </div>
       </div>
       <button class="bt s" onclick="dismissHelp()" style="flex:none">Got it</button>
@@ -1701,128 +1638,80 @@ function hbarChart(rows,color){
     </div>`).join('')}</div>`;
 }
 function vDash(){
-  const inprog=rels.filter(r=>r.cur!=='done').length;
-  const waiting=apps_.filter(a=>a.status==='open').length;
   const totalRels=rels.length;
-  const scheduledForProd=rels.filter(r=>r.cur==='prod').length;
-  const upcomingCount=rels.filter(r=>r.plan&&r.cur!=='done').length;
-  const byDeveloper=countBy(rels,r=>r.owner?U(r.owner).nm:null).slice(0,8);
-  const byComponent=countBy(rels,r=>C(r.comp).nm).slice(0,8);
-  const att=[];
-  apps_.filter(a=>a.status==='open'&&a.esc).forEach(a=>att.push([`Approval overdue — ${R(a.rel).ref}`,`${SL(a.stage)} has passed the escalation threshold`,a.rel]));
-  rels.filter(r=>stageState(r,r.cur)==='rejected').forEach(r=>att.push([`Rejected at ${SL(r.cur)} — ${r.ref}`,r.nm,r.id]));
-  acts.filter(v=>C(v.comp).owners.includes(me)&&v.by!==me&&!v.ack.includes(me))
-      .forEach(v=>att.push([`${U(v.by).nm} pulled changes on ${C(v.comp).nm}`,'Take the latest before continuing',null]));
-  const up=rels.filter(r=>r.plan&&r.cur!=='done').sort((a,b)=>a.plan.localeCompare(b.plan)).slice(0,5);
-  const done=rels.filter(r=>r.cur==='done').slice(0,4);
+  const done=rels.filter(r=>r.status==='COMPLETED');
+  const inprog=rels.filter(r=>r.status==='INPROGRESS').length;
+  const onhold=rels.filter(r=>r.status==='ON-HOLD').length;
+  const completed=done.length;
+  const byTeam=countBy(rels,r=>r.team||'Unspecified').slice(0,8);
+  const byActivity=ACTIVITIES.map(a=>[a.nm,rels.filter(r=>r.activity===a.k).length]).filter(x=>x[1]);
 
   const statusBuckets=[
-    {label:'In Progress',count:rels.filter(r=>['groom','anal','dev','uat'].includes(r.cur)).length,color:'var(--info)'},
-    {label:'Approval',count:rels.filter(r=>r.cur==='uatt').length,color:'var(--wait)'},
-    {label:'Production',count:rels.filter(r=>r.cur==='prod').length,color:'var(--teal)'},
-    {label:'Released',count:rels.filter(r=>r.cur==='done').length,color:'var(--go)'},
+    {label:'In Progress',count:inprog,color:'var(--info)'},
+    {label:'On-Hold',count:onhold,color:'var(--wait)'},
+    {label:'Completed',count:completed,color:'var(--go)'},
   ];
   const teamPalette=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
-  const teamSegs=byComponent.slice(0,6).map(([label,count],i)=>({label,count,color:teamPalette[i%teamPalette.length]}));
-  const showConflicts=hasPerm('view_conflicts');
-  const projectBars=showConflicts?countBy(conflicts,c=>c.project||'Unspecified').slice(0,9):[];
-  const projectPalette=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
-  const projectSegs=projectBars.slice(0,6).map(([label,count],i)=>({label,count,color:projectPalette[i%projectPalette.length]}));
-
-  const released=rels.filter(r=>r.cur==='done').length;
+  const teamSegs=byTeam.slice(0,6).map(([label,count],i)=>({label,count,color:teamPalette[i%teamPalette.length]}));
+  const recent=rels.slice(0,6);
   return `<div class="hero">
     <h1>Dashboard</h1>
     <p>Everything that needs your eyes, in one place.</p>
     <div class="hchips">
-      <span class="hchip ${att.length?'wait':'go'}"><i></i>${att.length?`${att.length} item${att.length!==1?'s':''} need attention`:'Nothing needs attention'}</span>
-      <span class="hchip"><i></i>${totalRels} release${totalRels!==1?'s':''} across ${comps.length} component${comps.length!==1?'s':''}</span>
-      ${waiting?`<span class="hchip wait"><i></i>${waiting} awaiting approval</span>`:''}
-      ${released?`<span class="hchip go"><i></i>${released} released</span>`:''}
+      <span class="hchip"><i></i>${totalRels} item${totalRels!==1?'s':''} across ${byTeam.length} team${byTeam.length!==1?'s':''}</span>
+      ${inprog?`<span class="hchip"><i></i>${inprog} in progress</span>`:''}
+      ${onhold?`<span class="hchip wait"><i></i>${onhold} on-hold</span>`:''}
+      ${completed?`<span class="hchip go"><i></i>${completed} completed</span>`:''}
     </div>
   </div>
   <div class="sec hero-lift"><div class="kpis">
-    ${kpiCard({label:'Total Releases',value:totalRels,icon:'📦',
-      hint:`across ${comps.length} components`,
-      act:{label:'View releases',on:"goReleases('all')"}})}
-    ${kpiCard({accent:'a-teal',label:'Releases in Progress',value:inprog,icon:'⏳',icCls:'teal',
-      hint:`not yet released ${att.length?`<span class="trend wait">${att.length} need attention</span>`:`<span class="trend go">On track</span>`}`,
-      act:{label:'View in progress',on:"goReleases('inprogress')"}})}
-    ${kpiCard({accent:'a-info',label:'Upcoming Releases',value:upcomingCount,icon:'📅',
-      hint:'have a planned date',
-      act:{label:'View upcoming',on:"goReleases('upcoming')"}})}
-    ${kpiCard({accent:'a-wait',label:'Pending Approval',value:waiting,nCls:waiting?'w':'',icon:'⚠',icCls:'wait',
-      hint:waiting?`<span class="trend wait">requests open</span>`:`<span class="trend go">None pending</span>`,
-      act:{label:'View pending',on:"goReleases('approval')"}})}
-    ${kpiCard({accent:'a-go',label:'Scheduled for Production',value:scheduledForProd,icon:'🚀',icCls:'go',
-      hint:'at that gate now',
-      act:{label:'View scheduled',on:"goReleases('prod')"}})}
+    ${kpiCard({label:'Total Items',value:totalRels,icon:'📦',
+      hint:`across ${byTeam.length} teams`,
+      act:{label:'My Release',on:"go('myrel')"}})}
+    ${kpiCard({accent:'a-teal',label:'In Progress',value:inprog,icon:'⏳',icCls:'teal',
+      hint:'currently being worked',
+      act:{label:'New Development',on:"go('newdev')"}})}
+    ${kpiCard({accent:'a-wait',label:'On-Hold',value:onhold,nCls:onhold?'w':'',icon:'⏸',icCls:'wait',
+      hint:onhold?`<span class="trend wait">paused</span>`:`<span class="trend go">None on hold</span>`,
+      act:{label:'New Development',on:"go('newdev')"}})}
+    ${kpiCard({accent:'a-go',label:'Completed',value:completed,icon:'✓',icCls:'go',
+      hint:'done and released',
+      act:{label:'New Development',on:"go('newdev')"}})}
   </div></div>`
   +(authUser&&authUser.must_change_password?`<div class="sec"><div class="mt w">
     You're signed in with a temporary password. <button class="lk" onclick="go('mypw')">Change it now</button>.</div></div>`:'')+helpCard()+`
 
   <div class="sec g2">
-    <div class="c"><div class="h"><h3>Release Status</h3></div><div class="b">
-      ${statusBuckets.some(s=>s.count)?donutChart(statusBuckets,'Releases'):chartEmpty('📊','No releases yet','Status breakdown appears once releases are added.')}
+    <div class="c"><div class="h"><h3>Status breakdown</h3></div><div class="b">
+      ${statusBuckets.some(s=>s.count)?donutChart(statusBuckets,'Items'):chartEmpty('📊','No items yet','Status breakdown appears once items are added.')}
     </div></div>
-    <div class="c"><div class="h"><h3>Releases by Developer</h3></div><div class="b">
-      ${byDeveloper.length?hbarChart(byDeveloper,'var(--teal)'):chartEmpty('👤','No developer data yet','Releases will appear here once a developer is assigned.')}
+    <div class="c"><div class="h"><h3>Items by activity</h3></div><div class="b">
+      ${byActivity.length?hbarChart(byActivity,'var(--teal)'):chartEmpty('🧭','No activity data yet','Items appear here grouped by activity.')}
     </div></div>
   </div>
 
-  <div class="sec g2">
-    <div class="c"><div class="h"><h3>Releases by Team</h3></div><div class="b">
-      ${teamSegs.some(s=>s.count)?donutChart(teamSegs,'Releases'):chartEmpty('🧩','No team data yet','Breakdown appears once releases are linked to a team.')}
-    </div></div>
-    ${showConflicts?`<div class="c"><div class="h"><h3>Project Tracker Summary</h3></div><div class="b">
-      ${projectSegs.some(s=>s.count)?donutChart(projectSegs,'Rows'):chartEmpty('🗂','No project tracker rows yet','Breakdown appears once rows are added.')}
-    </div></div>`:''}
-  </div>
-
-  ${showConflicts&&projectBars.length>1?`<div class="sec c"><div class="h"><h3>Project Tracker rows by project</h3></div><div class="b">
-    ${hbarChart(projectBars,'var(--navy)')}
-  </div></div>`:''}
-
-  ${att.length?`<div class="sec"><div class="c"><div class="h"><h3>Immediate attention</h3>
-    <div class="r"><span class="tag">${att.length} item${att.length!==1?'s':''}</span></div></div><div class="b flush">
-    ${att.map(a=>`<div class="li hot"><div class="gr"><div class="t">${E(a[0])}</div><div class="d">${E(a[1])}</div></div>
-      ${a[2]?`<button class="bt s" onclick="openR('${a[2]}')">Open</button>`:''}</div>`).join('')}
-  </div></div></div>`:''}
+  <div class="sec c"><div class="h"><h3>Items by team</h3></div><div class="b">
+    ${teamSegs.some(s=>s.count)?donutChart(teamSegs,'Items'):chartEmpty('🧩','No team data yet','Breakdown appears once items are linked to a team.')}
+  </div></div>
 
   <div class="sec grid">
-    <div class="c"><div class="h"><h3>Releases in progress</h3>
-      <div class="r">${inprog?`<span class="tag">${inprog} active</span>`:''}<button class="lk" onclick="goRelTab('my_team')">View all →</button></div></div>
-      <div class="b flush">${inprog?`<div class="tw"><table>
-      <thead><tr><th>Team Name</th><th>Component</th><th>Gate</th><th>State</th><th>Planned</th></tr></thead><tbody>
-      ${rels.filter(r=>r.cur!=='done').map(r=>`<tr class="k" onclick="openR('${r.id}')">
-        <td><div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div></td>
-        <td>${E(C(r.comp).nm)}</td><td>${E(SL(r.cur))}</td><td>${stt(stageState(r,r.cur))}</td>
-        <td class="mono" style="font-size:12px">${fd(r.plan)}</td></tr>`).join('')}
+    <div class="c"><div class="h"><h3>Recent items</h3>
+      <div class="r"><button class="lk" onclick="go('newdev')">View all →</button></div></div>
+      <div class="b flush">${recent.length?`<div class="tw"><table>
+      <thead><tr><th>Jira #</th><th>Team</th><th>Activity</th><th>Status</th></tr></thead><tbody>
+      ${recent.map(r=>`<tr class="k" onclick="openR('${r.id}')">
+        <td><div class="tt">${E(r.jira||r.ref)}</div></td>
+        <td>${E(r.team||'—')}</td><td>${E(AL(r.activity))}</td><td>${stt(r.status)}</td></tr>`).join('')}
       </tbody></table></div>`
-      :chartEmpty('📦','No releases in progress','Releases still moving through the gates will be listed here.')}
+      :chartEmpty('📦','No items yet','Development items will be listed here.')}
       </div></div>
 
-    <div class="c"><div class="h"><h3>Upcoming production</h3>
-      ${up.length?`<div class="r"><span class="tag">next ${up.length}</span></div>`:''}</div><div class="b flush">
-      ${up.length?up.map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.nm)}</div>
-        <div class="d">${r.ref} · ${E(C(r.comp).nm)}</div></div>
-        <div class="mono" style="font-size:11.5px;color:var(--mut);white-space:nowrap">${fd(r.plan)}</div></div>`).join('')
-      :chartEmpty('📅','No dates planned','Releases with a planned production date will appear here.')}
-    </div></div>
-  </div>
-
-  <div class="sec g2">
-    <div class="c"><div class="h"><h3>Recent messages</h3>
-      <div class="r"><button class="lk" onclick="go('note')">All →</button></div></div><div class="b flush">
-      ${notifs.length?notifs.slice(0,5).map(n=>`<div class="li"><div class="gr"><div class="t">${E(n.sub)}</div>
-        <div class="d">${n.ty} · ${n.to.length} recipient${n.to.length!==1?'s':''} · ${fdt(n.on)}</div></div></div>`).join('')
-      :chartEmpty('📨','No messages yet','Approval requests and alerts the app sends will be listed here.')}
-    </div></div>
     <div class="c"><div class="h"><h3>Recently completed</h3>
-      ${done.length?`<div class="r"><span class="tag">${done.length} live</span></div>`:''}</div><div class="b flush">
-      ${done.length?done.map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.nm)}</div>
-        <div class="d">${r.ref} · released ${fd(r.actual)}</div></div>
-        <span class="tick">✓ Live</span></div>`).join('')
-      :chartEmpty('✓','Nothing released yet','Completed releases will be listed here once they go live.')}
+      ${done.length?`<div class="r"><span class="tag">${done.length} done</span></div>`:''}</div><div class="b flush">
+      ${done.length?done.slice(0,6).map(r=>`<div class="li"><div class="gr"><div class="t">${E(r.jira||r.ref)}</div>
+        <div class="d">${E(r.team||'—')} · ${E(r.nm)}</div></div>
+        <span class="tick">✓ Done</span></div>`).join('')
+      :chartEmpty('✓','Nothing completed yet','Completed items will be listed here.')}
     </div></div>
   </div>`;
 }
@@ -1908,14 +1797,16 @@ function mineRail(items){
    count of releases sitting there. Uses STAGES + rels[].cur, so it can
    never drift from the actual workflow. Horizontal by design: it adds
    information without pushing the grid down the page. */
+/* activity distribution strip — shows how New Development items are spread
+   across the six activities. Horizontal by design. */
 function releasePipeline(){
   if(!rels.length)return '';
-  return `<div class="sec"><div class="c"><div class="h"><h3>Pipeline</h3>
+  return `<div class="sec"><div class="c"><div class="h"><h3>By activity</h3>
     <div class="r"><span class="tag">${rels.length} total</span></div></div>
     <div class="b"><div class="pipe">
-      ${STAGES.map(s=>{const n=rels.filter(r=>r.cur===s.k).length;
+      ${ACTIVITIES.map(a=>{const n=rels.filter(r=>r.activity===a.k).length;
         return `<div class="stg ${n?'on':''}"><div class="n" style="${n?'':'color:var(--mut2)'}">${n}</div>
-          <div class="l">${E(s.nm)}</div></div>`;}).join('')}
+          <div class="l">${E(a.nm)}</div></div>`;}).join('')}
     </div></div></div></div>`;
 }
 
@@ -1924,114 +1815,108 @@ function setF(k,v){flt[k]=v;draw()}
 /* ═══ release grid (Excel-style, shared by all 3 categories) ══ */
 /* `scope` narrows the grid to the slice a Dashboard KPI refers to, so a
    KPI's View action lands on exactly the rows it counted. */
-let rflt={q:'',scope:'all',sort:'nameAsc',page:1};
-const REL_SCOPES=[
-  {k:'all',      nm:'All releases',        test:r=>true},
-  {k:'inprogress',nm:'In progress',        test:r=>r.cur!=='done'},
-  {k:'upcoming', nm:'Upcoming (planned)',  test:r=>!!r.plan&&r.cur!=='done'},
-  {k:'approval', nm:'Awaiting approval',   test:r=>apps_.some(a=>a.rel===r.id&&a.status==='open')},
-  {k:'prod',     nm:'Scheduled for production',test:r=>r.cur==='prod'},
-  {k:'done',     nm:'Released',            test:r=>r.cur==='done'},
-];
-const relScope=k=>REL_SCOPES.find(x=>x.k===k)||REL_SCOPES[0];
-/* Entry point used by Dashboard KPI actions. */
-function goReleases(scope){rflt.scope=scope;rflt.page=1;releaseTab='my_team';go('relmgmt')}
+let rflt={q:'',sort:'jiraAsc',page:1};
+/* Entry point used by Dashboard KPI actions — lands on New Development. */
+function goReleases(){rflt.page=1;go('newdev')}
 const REL_PAGE_SIZE=20;
-let releaseTab='my_team';
-function setReleaseTab(key){releaseTab=key;rflt.page=1;draw()}
-function goRelTab(key){releaseTab=key;go('relmgmt')}
 function setRF(k,v){rflt[k]=v;rflt.page=1;draw()}
-function clearRF(){rflt={q:'',scope:'all',sort:'nameAsc',page:1};draw()}
+function clearRF(){rflt={q:'',sort:'jiraAsc',page:1};draw()}
 /* My Team Release, New Release, and BMS Release are the same rows — the
    catKey argument only picks which tab's edit/read-only mode applies, it
    no longer filters which records show. */
 function filteredReleases(catKey){
   let rows=rels.slice();
-  rows=rows.filter(relScope(rflt.scope).test);
   if(rflt.q){
     const q=rflt.q.toLowerCase();
-    rows=rows.filter(r=>[r.nm,r.ref,r.jira,r.workstream,r.po,r.scrum,r.bizOwner,r.financeUat,r.desc,U(r.owner).nm]
+    rows=rows.filter(r=>[r.jira,r.ref,r.team,r.nm,r.assignee,AL(r.activity),SU(r.status),r.po,r.scrum]
       .filter(Boolean).join(' ').toLowerCase().includes(q));
   }
   rows=rows.slice().sort((a,b)=>{
-    if(rflt.sort==='nameDesc')return (b.nm||'').localeCompare(a.nm||'');
-    if(rflt.sort==='jiraAsc')return (a.jira||'').localeCompare(b.jira||'');
-    return (a.nm||'').localeCompare(b.nm||'');
+    if(rflt.sort==='teamAsc')return (a.team||'').localeCompare(b.team||'')||(a.jira||'').localeCompare(b.jira||'');
+    if(rflt.sort==='jiraDesc')return (b.jira||'').localeCompare(a.jira||'');
+    return (a.jira||'').localeCompare(b.jira||'');
   });
   return rows;
 }
-/* 23 columns total = the 21 exact columns from Release.xlsx (7 base fields +
-   13 milestones + Comments, names/order untouched) plus two app-specific
-   columns, Team Name and Developer Name, needed for release identification
-   and developer filtering. Component and the separate Planned/Actual date
-   columns were dropped — Production Release Date (Excel column 20, already
-   one of the 13 milestones below) is the only production-date column now. */
+/* Columns depend on which view is active.
+   My Release (myrel): overview — Jira #, Team, Activity, Current Status,
+     Assignee. (The per-row "New Development" button and Edit/View are added
+     by vReleaseGrid, not here.)
+   New Development / BMS (newdev/bms): adds the Date column between Status
+     and Assignee. All values come straight from the shared record. */
+const DASH='<span style="color:var(--mut2)">—</span>';
+function actChip(r){return `<span class="stt s-none"><i></i>${E(AL(r.activity))}</span>`}
 function gridColumns(){
   const cols=[
-   {h:'Team Name',w:190,cell:r=>`<div class="tt">${E(r.nm)}</div><div class="rf">${r.ref}</div>`},
-   {h:'Workstream',w:130,cell:r=>r.workstream?E(r.workstream):'<span style="color:var(--mut2)">—</span>'},
-   {h:"Jira #",w:100,cell:r=>r.jira?E(r.jira):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Summary/Description',w:240,cell:r=>r.desc?E(r.desc):'<span style="color:var(--mut2)">—</span>'},
-   {h:'PO',w:130,cell:r=>r.po?E(r.po):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Scrum Master',w:130,cell:r=>r.scrum?E(r.scrum):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Business Owner',w:140,cell:r=>r.bizOwner?E(r.bizOwner):'<span style="color:var(--mut2)">—</span>'},
-   {h:'Finance UAT Tester (Populated by Finance)',w:200,cell:r=>r.financeUat?E(r.financeUat):'<span style="color:var(--mut2)">—</span>'},
+   {h:'Jira #',w:120,cell:r=>r.jira?`<div class="tt">${E(r.jira)}</div>`:DASH},
+   {h:'Team',w:210,cell:r=>r.team?E(r.team):DASH},
+   {h:'Activity',w:150,cell:r=>actChip(r)},
+   {h:'Current Status',w:140,cell:r=>stt(r.status)},
   ];
-  MILESTONES.forEach(m=>cols.push({h:m.name,w:160,cell:r=>{
-    const ms=r.milestones.find(x=>x.key===m.key);
-    if(!ms)return'<span style="color:var(--mut2)">—</span>';
-    if(m.approval)return ms.approved?'<span class="tick">✓ Approved</span>':'<span style="color:var(--mut)">Pending</span>';
-    return stt(ms.status);
-  }}));
-  cols.push({h:'Comments',w:180,cell:r=>r.comments?E(r.comments):'<span style="color:var(--mut2)">—</span>'});
-  cols.push({h:'Developer Name',w:150,cell:r=>E(U(r.owner).nm)});
+  if(view!=='myrel')cols.push({h:'Date',w:130,cell:r=>r.date?`<span class="mono" style="font-size:12px">${fd(r.date)}</span>`:DASH});
+  cols.push({h:'Assignee',w:150,cell:r=>r.assignee?E(r.assignee):DASH});
   return cols;
 }
+/* Shared by the three release views (My Release, New Development, BMS
+   Release). `view` selects behaviour:
+     myrel  — overview list, read-only, per-row "New Development" button.
+     newdev — full editable New Development grid (create/edit/delete).
+     bms    — same records, read-only.
+   All three show the same shared rels. */
 function vReleaseGrid(){
-  const catKey=releaseTab;
-  const cat=RC(catKey);
-  const canCreateHere=canCreateRelease(catKey);
-  const canEditHere=hasPerm('edit_release')&&cat.editable;
-  const canDeleteHere=hasPerm('delete_release')&&cat.editable;
-  const showActionCol=canEditHere||canDeleteHere;
+  const isNewDev=view==='newdev';
+  const isMine=view==='myrel';
+  const headKey=isMine?'myrel':(isNewDev?'newdev':'bms');
+  const editable=isNewDev;
+  const canCreateHere=isNewDev&&hasPerm('create_release');
+  const canEditHere=isNewDev&&hasPerm('edit_release');
+  const canDeleteHere=isNewDev&&hasPerm('delete_release');
+  // My Release always shows a per-row action (the New Development button + View).
+  const showActionCol=isMine||canEditHere||canDeleteHere;
   const showDraft=canCreateHere&&draftRelease;
-  const all=filteredReleases(catKey);
+  const all=filteredReleases(view);
   const totalPages=Math.max(1,Math.ceil(all.length/REL_PAGE_SIZE));
   if(rflt.page>totalPages)rflt.page=totalPages;
   const pageRows=all.slice((rflt.page-1)*REL_PAGE_SIZE,rflt.page*REL_PAGE_SIZE);
   const cols=gridColumns();
-  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(showActionCol?170:0);
-  const tabs=`<div class="seg" style="margin-top:16px">${RELEASE_CATEGORIES.map(c=>
-    `<button class="${c.key===catKey?'on':''}" onclick="setReleaseTab('${c.key}')">${c.ic} ${E(c.nav)}</button>`).join('')}</div>`;
-  const liveCount=rels.filter(r=>r.cur==='done').length;
-  return head('relmgmt',(canCreateHere?`<button class="bt p" onclick="mNewRow()">New release</button>`:'')+
-    `<button class="bt" onclick="exportReleaseGridCsv('${catKey}')">Export</button>`,[
-      {label:`${rels.length} release${rels.length!==1?'s':''}`},
-      {label:`${rels.length-liveCount} in flight`,tone:'teal'},
-      {label:`${liveCount} released`,tone:'go'}
+  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(showActionCol?190:0);
+  const inprog=rels.filter(r=>r.status==='INPROGRESS').length;
+  const doneN=rels.filter(r=>r.status==='COMPLETED').length;
+  const rowActions=r=>{
+    if(isMine)return `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+      <button class="bt s p" onclick="go('newdev')">New Development</button>
+      <button class="bt s" onclick="openR('${r.id}')">View</button></td>`;
+    if(!showActionCol)return '';
+    return `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+      <button class="bt s" onclick="openR('${r.id}')">View</button>
+      ${canEditHere?`<button class="bt s" onclick="editRelRow('${r.id}')">Edit</button>`:''}
+      ${canDeleteHere?`<button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button>`:''}
+    </td>`;
+  };
+  return head(headKey,(canCreateHere?`<button class="bt p" onclick="mNewRow()">New item</button>`:'')+
+    `<button class="bt" onclick="exportReleaseGridCsv('${view}')">Export</button>`,[
+      {label:`${rels.length} item${rels.length!==1?'s':''}`},
+      {label:`${inprog} in progress`,tone:'teal'},
+      {label:`${doneN} completed`,tone:'go'}
     ])+
-    tabs+
-    (!cat.editable?`<div class="sec"><div class="mt">Read-only view — same release data as My Team Release. Switch to the My Team Release tab to edit.</div></div>`:'')+
-    releasePipeline()+`
-  <div class="sec c"><div class="h"><h3>Find a release</h3>
-    ${(rflt.q||rflt.scope!=='all'||rflt.sort!=='nameAsc')?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
+    (view==='bms'?`<div class="sec"><div class="mt">Read-only view — the same New Development records. Open New Development to edit.</div></div>`:'')+
+    (isNewDev?releasePipeline():'')+`
+  <div class="sec c"><div class="h"><h3>Find an item</h3>
+    ${(rflt.q||rflt.sort!=='jiraAsc')?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
     <div class="b">
     <div class="fg">
-      <div><label>Search</label><input id="rfq" value="${E(rflt.q)}" placeholder="Team name, Jira #, workstream, PO, developer..."
+      <div><label>Search</label><input id="rfq" value="${E(rflt.q)}" placeholder="Jira #, team, assignee, activity, status..."
         oninput="rflt.q=this.value;rflt.page=1;clearTimeout(window._rf);window._rf=setTimeout(()=>drawKeepCaret('rfq'),220)"></div>
-      <div><label>Show</label><select onchange="setRF('scope',this.value)">
-        ${REL_SCOPES.map(sc=>`<option value="${sc.k}" ${rflt.scope===sc.k?'selected':''}>${E(sc.nm)}</option>`).join('')}
-      </select></div>
       <div><label>Sort by</label><select onchange="setRF('sort',this.value)">
-        <option value="nameAsc" ${rflt.sort==='nameAsc'?'selected':''}>Team name (A–Z)</option>
-        <option value="nameDesc" ${rflt.sort==='nameDesc'?'selected':''}>Team name (Z–A)</option>
-        <option value="jiraAsc" ${rflt.sort==='jiraAsc'?'selected':''}>Jira # (A–Z)</option></select></div>
+        <option value="jiraAsc" ${rflt.sort==='jiraAsc'?'selected':''}>Jira # (A–Z)</option>
+        <option value="jiraDesc" ${rflt.sort==='jiraDesc'?'selected':''}>Jira # (Z–A)</option>
+        <option value="teamAsc" ${rflt.sort==='teamAsc'?'selected':''}>Team (A–Z)</option></select></div>
     </div>
     <div style="margin-top:14px"><button class="bt s" onclick="clearRF()">Clear filters</button></div>
   </div></div>
 
-  <div class="c"><div class="h"><h3>${E(cat.nav)} · ${all.length}</h3>
-    <div class="r"><span class="tag">${cat.editable?'Editable':'Read-only'}</span>
+  <div class="c"><div class="h"><h3>${E(TITLES[headKey][0])} · ${all.length}</h3>
+    <div class="r"><span class="tag">${editable?'Editable':'Read-only'}</span>
       <span class="tag">${cols.length} columns</span></div></div>
     <div class="b flush">${(pageRows.length||showDraft)?`
     <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
@@ -2040,13 +1925,10 @@ function vReleaseGrid(){
     <tbody>
       ${showDraft?renderEditRow(draftRelease,true):''}
       ${pageRows.map(r=>{
-        if(editingRelId===r.id)return renderEditRow(r,false);
+        if(isNewDev&&editingRelId===r.id)return renderEditRow(r,false);
         return `<tr class="k" onclick="openR('${r.id}')">
       ${cols.map(c=>`<td style="white-space:nowrap">${c.cell(r)}</td>`).join('')}
-      ${showActionCol?`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-        ${canEditHere?`<button class="bt s" onclick="editRelRow('${r.id}')">Edit</button>`:''}
-        ${canDeleteHere?`<button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button>`:''}
-      </td>`:''}
+      ${rowActions(r)}
     </tr>`;
       }).join('')}
     </tbody></table></div>
@@ -2058,9 +1940,9 @@ function vReleaseGrid(){
         <button class="bt s" ${rflt.page>=totalPages?'disabled':''} onclick="rflt.page++;draw()">Next →</button>
       </div>
     </div>`
-    :rflt.q?`<div class="ept"><h4>No releases found</h4><p>No records match the current search.</p>
+    :rflt.q?`<div class="ept"><h4>No items found</h4><p>No records match the current search.</p>
       <button class="bt s" style="margin-top:14px" onclick="clearRF()">Clear filters</button></div>`
-    :`<div class="ept"><h4>No releases yet</h4><p>${canCreateHere?'Create one to get started.':'Nothing has been added yet.'}</p></div>`}
+    :`<div class="ept"><h4>No items yet</h4><p>${canCreateHere?'Create one to get started.':'Nothing has been added yet.'}</p></div>`}
   </div></div>`;
 }
 function exportReleaseGridCsv(catKey){
@@ -2071,114 +1953,119 @@ function exportReleaseGridCsv(catKey){
   })));
   const csv=rows.map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
-    a.href=u;a.download=`${catKey}-releases.csv`;a.click();URL.revokeObjectURL(u);toast('Exported')}
+    a.href=u;a.download=`${catKey}-items.csv`;a.click();URL.revokeObjectURL(u);toast('Exported')}
   catch(e){navigator.clipboard?.writeText(csv);toast('Copied to clipboard')}
 }
 
-/* ═══ release detail ════════════════════ */
-function vRel(){
-  const r=R(openRel);if(!r){releaseTab='my_team';return vReleaseGrid()}
-  const ci=SI(r.cur),gate=STAGES[ci].gate;
-  const[advOk,advWhy]=canAdvance(r);
-  const[reqOk,reqWhy]=gate?canRequest(r,r.cur):[false,''];
-  const oa=openApp(r.id,r.cur);
-  const acts_=canEditRelease(r)?`
-    ${gate&&!oa?`<button class="bt p" ${reqOk?'':'disabled'} onclick="mApprove('${r.id}','${r.cur}')">Send for ${r.cur==='uatt'?'business':'production'} approval</button>`:''}
-    ${advOk?`<button class="bt ${gate?'':'p'}" onclick="advance('${r.id}')">Move to ${SL(STAGES[ci+1].k)}</button>`:''}
-    ${ci>0?`<button class="bt d" onclick="mReturn('${r.id}')">Return to earlier gate</button>`:''}
-    ${hasPerm('delete_release')?`<button class="bt d" onclick="mDelRelease('${r.id}')">Delete release</button>`:''}`:'';
-
-  const rail=`<div class="c sec"><div class="h"><h3>Gate progress</h3>
-    <div class="r">${stt(stageState(r,r.cur))}</div></div><div class="b">
-    <div class="gwrap"><div class="gates">
-    ${STAGES.map((s,i)=>{
-      const st=stageState(r,s.k);let cls='',mk='';
-      if(st==='completed'||st==='approved'){cls='done';mk='<span class="mk">✓</span>'}
-      else if(st==='rejected'){cls='bd';mk='<span class="mk">✕</span>'}
-      else if(st==='waiting'){cls='wt'}
-      else if(i===ci){cls='now'}
-      else if(i<ci){cls='done';mk='<span class="mk">✓</span>'}
-      const d=s.gate?lastDec(r.id,s.k):null;
-      return `<div class="gt ${cls}"><div class="bar"></div>
-        <div class="ix">GATE ${P2(i+1)}</div>
-        <div class="nm">${mk}${s.nm}</div>
-        <div class="stt ${(STATES[st]||[])[1]}" style="font-size:11.5px"><i></i>${STATES[st][0]}</div>
-        ${d?`<div class="mono" style="font-size:10.5px;color:var(--mut2);margin-top:5px">${fdt(d.on)}</div>`:''}
+/* ═══ New Development detail ═════════════ */
+/* JIRA object types + labels used by the JIRA Objects editor. */
+function joAdd(rid,type){
+  const r=R(rid);if(!r||!canEditRelease(r))return;
+  r.jiraObjects=r.jiraObjects||blankJiraObjects();
+  (r.jiraObjects[type]=r.jiraObjects[type]||[]).push({id:'JO'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:'',note:''});
+  joEdit[type+':'+(r.jiraObjects[type].length-1)]=true;draw();
+}
+function joDel(rid,type,i){
+  const r=R(rid);if(!r||!canEditRelease(r))return;
+  if(!confirm('Remove this JIRA object?'))return;
+  r.jiraObjects[type].splice(i,1);delete joEdit[type+':'+i];persist();draw();toast('Removed');
+}
+function joToggle(type,i){joEdit[type+':'+i]=!joEdit[type+':'+i];draw()}
+function joSave(rid,type,i){
+  const r=R(rid);if(!r)return;
+  const nm=(document.getElementById('jon-'+type+'-'+i)||{}).value||'';
+  const nt=(document.getElementById('jod-'+type+'-'+i)||{}).value||'';
+  r.jiraObjects[type][i].name=nm.trim();r.jiraObjects[type][i].note=nt.trim();
+  joEdit[type+':'+i]=false;persist();draw();toast('Saved');
+}
+let joEdit={};
+function joSection(r){
+  const editable=canEditRelease(r);
+  const jo=r.jiraObjects||blankJiraObjects();
+  return `<div class="c sec"><div class="h"><h3>JIRA Objects</h3>
+    <div class="r"><span class="tag">${JIRA_OBJECT_TYPES.reduce((s,t)=>s+((jo[t.key]||[]).length),0)} object${JIRA_OBJECT_TYPES.reduce((s,t)=>s+((jo[t.key]||[]).length),0)!==1?'s':''}</span></div></div>
+    <div class="b">
+    ${JIRA_OBJECT_TYPES.map((t,ti)=>{
+      const rows=jo[t.key]||[];
+      return `<div style="margin-bottom:${ti<JIRA_OBJECT_TYPES.length-1?'20':'0'}px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:600;font-size:13.5px">${ti+1}. ${E(t.nm)}</div>
+          ${editable?`<button class="bt s" onclick="joAdd('${r.id}','${t.key}')">Add</button>`:''}
+        </div>
+        ${rows.length?`<div class="tw"><table><thead><tr><th style="width:40%">Name</th><th>Notes</th>${editable?'<th style="width:150px"></th>':''}</tr></thead>
+        <tbody>${rows.map((o,i)=>{
+          const key=t.key+':'+i;
+          if(editable&&joEdit[key])return `<tr>
+            <td><input id="jon-${t.key}-${i}" value="${E(o.name||'')}" placeholder="e.g. XX_ORDER_FORM"></td>
+            <td><input id="jod-${t.key}-${i}" value="${E(o.note||'')}" placeholder="Optional notes"></td>
+            <td style="text-align:right;white-space:nowrap">
+              <button class="bt s p" onclick="joSave('${r.id}','${t.key}',${i})">Save</button>
+              <button class="bt s d" onclick="joDel('${r.id}','${t.key}',${i})">Delete</button></td></tr>`;
+          return `<tr>
+            <td class="tt" style="font-weight:500">${o.name?E(o.name):'<span style="color:var(--mut2)">Untitled</span>'}</td>
+            <td style="color:var(--mut);font-size:12.5px">${o.note?E(o.note):'<span style="color:var(--mut2)">—</span>'}</td>
+            ${editable?`<td style="text-align:right;white-space:nowrap">
+              <button class="bt s" onclick="joToggle('${t.key}',${i})">Edit</button>
+              <button class="bt s d" onclick="joDel('${r.id}','${t.key}',${i})">Delete</button></td>`:''}</tr>`;
+        }).join('')}</tbody></table></div>`
+        :`<div style="color:var(--mut2);font-size:12.5px;padding:6px 0">No ${E(t.nm)} objects yet.</div>`}
       </div>`;
     }).join('')}
-    </div></div>
-  </div></div>`;
-
-  const apl=appsFor(r.id);
+    </div></div>`;
+}
+function vRel(){
+  const r=R(openRel);if(!r){go('newdev');return ''}
+  const editable=canEditRelease(r);
+  const backView=(view==='myrel'||view==='bms')?view:'newdev';
+  const backLabel=backView==='myrel'?'My Release':backView==='bms'?'BMS Release':'New Development';
+  const acts_=editable?`
+    <button class="bt p" onclick="editRelRow('${r.id}');go('newdev')">Edit</button>
+    ${hasPerm('delete_release')?`<button class="bt d" onclick="mDelRelease('${r.id}')">Delete</button>`:''}`:'';
 
   return `<div class="ph">
     <div class="phl">
-      <button class="lk" style="margin-bottom:12px" onclick="go('relmgmt')">← Release Management</button>
-      <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${r.ref} · ${E(C(r.comp).nm).toUpperCase()}</div>
-      <h1>${E(r.nm)}</h1><p>${E(r.desc)}</p>
+      <button class="lk" style="margin-bottom:12px" onclick="go('${backView}')">← ${backLabel}</button>
+      <div class="mono" style="font-size:11.5px;color:var(--mut2);letter-spacing:.05em;margin-bottom:5px">${E(r.jira||r.ref||'')}${r.team?' · '+E(r.team).toUpperCase():''}</div>
+      <h1>${E(r.nm||'Untitled')}</h1>
     </div>
     ${acts_?`<div class="acts">${acts_}</div>`:''}
   </div>
 
-  ${(advWhy&&canEditRelease(r)&&r.cur!=='done')?`<div class="sec"><div class="mt w">${E(advWhy)}</div></div>`:''}
-  ${(gate&&reqWhy&&!oa&&canEditRelease(r))?`<div class="sec"><div class="mt w">${E(reqWhy)}</div></div>`:''}
-
-  ${rail}
-
   <div class="grid">
     <div>
-      <div class="c sec"><div class="h"><h3>Approval record</h3>
-        <div class="r"><span class="tag">${apl.length} entr${apl.length!==1?'ies':'y'}</span></div></div><div class="b">
-        ${apl.length?apl.map(a=>{
-          const g=G(a.grp),pend=g.members.filter(m=>!a.dec.some(d=>d.u===m));
-          return `<div class="appr"><div class="ah">
-            <span class="an">${SL(a.stage)}</span>
-            ${a.status==='approved'?'<span class="tick">✓ Approved</span>':
-              a.status==='rejected'?'<span class="stt s-bad"><i></i>Rejected</span>':
-              '<span class="stt s-wait"><i></i>Waiting</span>'}
-            ${a.esc?'<span class="tag" style="color:var(--stop);border-color:var(--stop-ln);background:var(--stop-bg)">Escalated</span>':''}
-          </div>
-          <div class="am">${E(g.nm)} · ${a.cond==='any'?'any one approver':'every approver'} · requested by ${E(U(a.by).nm)}, ${fdt(a.on)}</div>
-          ${a.dec.map(d=>`<div class="seal ${d.d==='rejected'?'no':''}">
-            <span class="mk">${d.d==='rejected'?'✕':'✓'}</span>
-            <div><div class="w">${E(U(d.u).nm)}</div>
-              <div class="t">${d.d==='rejected'?'Rejected':'Approved'} · ${fdt(d.on)}</div>
-              ${d.c?`<div class="q">“${E(d.c)}”</div>`:''}</div></div>`).join('')}
-          ${a.status==='open'&&pend.length?pend.map(m=>`<div class="pend">
-            <span class="mk">◷</span><div><div class="w">${E(U(m).nm)}</div>
-            <div class="t">Awaiting decision · ${E(U(m).em)}</div></div></div>`).join(''):''}
-          </div>`;
-        }).join(''):'<div class="ept"><p>No approval has been requested for this release yet.</p></div>'}
-      </div></div>
+      ${joSection(r)}
 
-      ${oa?`<div class="c sec"><div class="h"><h3>Record a decision</h3></div><div class="b">
-        <div class="mt" style="margin-bottom:16px">Approvers normally decide through the secure link emailed to them. These controls stand in for that link so the workflow can be walked through here.</div>
-        ${G(oa.grp).members.filter(m=>!oa.dec.some(d=>d.u===m)).map(m=>`
-          <div class="li" style="border:1px solid var(--line);border-radius:10px;margin-bottom:9px;padding:12px 14px">
-            <div class="gr"><div class="t">${E(U(m).nm)}</div>
-              <div class="d mono" style="font-size:11.5px">${E(U(m).em)}</div></div>
-            <button class="bt s p" onclick="decide('${oa.id}','${m}','approved')">Approve</button>
-            <button class="bt s d" onclick="mReject('${oa.id}','${m}')">Reject</button>
-          </div>`).join('')||'<p style="color:var(--mut);font-size:13.5px">Every approver has responded.</p>'}
-      </div></div>`:''}
+      <div class="c sec"><div class="h"><h3>Milestones</h3></div>
+        <div class="b flush"><div class="tw"><table>
+        <thead><tr><th>Milestone</th><th>Value</th></tr></thead>
+        <tbody>${MILESTONES.map(ms=>{
+          const raw=(r.milestones||{})[ms.key];
+          return `<tr>
+            <td class="tt" style="font-weight:500">${E(ms.name)}${ms.critical?' <span class="tag">Critical</span>':''}</td>
+            <td>${raw?E(String(raw)):'<span style="color:var(--mut2)">—</span>'}</td></tr>`;
+        }).join('')}</tbody></table></div></div></div>
 
       <div class="c"><div class="h"><h3>Notes</h3></div><div class="b">
-        ${r.cmts.length?r.cmts.map(c=>`<div style="padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line)">
+        ${(r.cmts||[]).length?r.cmts.map(c=>`<div style="padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line)">
           <div style="font-size:13px"><b style="font-weight:600">${E(U(c.by).nm)}</b>
             <span class="mono" style="font-size:11px;color:var(--mut2);margin-left:7px">${fdt(c.on)}</span></div>
           <div style="margin-top:4px;color:var(--ink2)">${E(c.tx)}</div></div>`).join('')
-        :'<p style="color:var(--mut);font-size:13.5px;margin-bottom:14px">No notes on this release yet.</p>'}
-        ${canEditRelease(r)?`<label>Add a note</label><textarea id="cmt" rows="2" placeholder="Visible to Admin and Release Management"></textarea>
+        :'<p style="color:var(--mut);font-size:13.5px;margin-bottom:14px">No notes yet.</p>'}
+        ${editable?`<label>Add a note</label><textarea id="cmt" rows="2" placeholder="Visible to Admin and Release Management"></textarea>
         <button class="bt s" style="margin-top:10px" onclick="addCmt('${r.id}')">Add note</button>`:''}
       </div></div>
     </div>
 
     <div>
-      <div class="c sec"><div class="h"><h3>Basic information</h3>
-        <div class="r">${canEditRelease(r)?`<button class="bt s" onclick="mEditBasics('${r.id}')">Edit</button>`:''}</div></div><div class="b">
+      <div class="c sec"><div class="h"><h3>Details</h3>
+        <div class="r">${editable?`<button class="bt s" onclick="editRelRow('${r.id}');go('newdev')">Edit</button>`:''}</div></div><div class="b">
         <div class="kv">
-          <div class="k">Workstream</div><div>${r.workstream?E(r.workstream):'<span style="color:var(--mut2)">—</span>'}</div>
           <div class="k">Jira #</div><div class="mono" style="font-size:12.5px">${r.jira?E(r.jira):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">Team</div><div>${r.team?E(r.team):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">Activity</div><div>${AL(r.activity)?E(AL(r.activity)):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">Current Status</div><div>${stt(r.status)}</div>
+          <div class="k">Date</div><div class="mono" style="font-size:12.5px">${r.date?fd(r.date):'<span style="color:var(--mut2)">—</span>'}</div>
+          <div class="k">Assignee</div><div>${r.assignee?E(r.assignee):'<span style="color:var(--mut2)">—</span>'}</div>
           <div class="k">PO</div><div>${r.po?E(r.po):'<span style="color:var(--mut2)">—</span>'}</div>
           <div class="k">Scrum Master</div><div>${r.scrum?E(r.scrum):'<span style="color:var(--mut2)">—</span>'}</div>
           <div class="k">Business Owner</div><div>${r.bizOwner?E(r.bizOwner):'<span style="color:var(--mut2)">—</span>'}</div>
@@ -2186,195 +2073,77 @@ function vRel(){
         </div>
       </div></div>
 
-      <div class="c sec"><div class="h"><h3>Release information</h3></div><div class="b">
-        <div class="kv">
-          <div class="k">Reference</div><div class="mono" style="font-size:12.5px">${r.ref}</div>
-          <div class="k">Component</div><div>${E(C(r.comp).nm)}</div>
-          <div class="k">Developer Name</div><div>${E(U(r.owner).nm)}</div>
-          <div class="k">Current stage</div><div>${E(SL(r.cur))}</div>
-          <div class="k">Business</div><div>${(()=>{const d=lastDec(r.id,'uatt');
-            return d?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:11px;color:var(--mut2);margin-top:3px">${fdt(d.on)} · ${E(U(d.u).nm)}</div>`
-            :'<span style="color:var(--mut)">Not approved</span>'})()}</div>
-          <div class="k">Production</div><div>${(()=>{const d=lastDec(r.id,'prod');
-            return d?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:11px;color:var(--mut2);margin-top:3px">${fdt(d.on)} · ${E(U(d.u).nm)}</div>`
-            :'<span style="color:var(--mut)">Not approved</span>'})()}</div>
-          <div class="k">Planned</div><div class="mono" style="font-size:12.5px">${fd(r.plan)}</div>
-          <div class="k">Actual</div><div class="mono" style="font-size:12.5px">${fd(r.actual)}</div>
-          <div class="k">Attachments</div><div>${r.atts.length?r.atts.map(a=>`<div class="mono" style="font-size:12px">${E(a)}</div>`).join(''):'<span style="color:var(--mut)">None</span>'}</div>
-        </div>
-        ${canEditRelease(r)?`<div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="bt s" onclick="mDate('${r.id}')">Set planned date</button>
-          <button class="bt s" onclick="mAtt('${r.id}')">Add attachment</button></div>`:''}
-      </div></div>
-
       <div class="c"><div class="h"><h3>History</h3></div><div class="b">
         <div class="tl">${audit.filter(a=>a.rel===r.id).map(a=>`<div class="e">
           <div class="w">${fdt(a.on)}</div>
           <div><b>${E(U(a.ac).nm)}</b> — ${E(a.act)}
-            ${a.prev!=='—'?`<div style="color:var(--mut);font-size:12.5px">${E(a.prev)} → ${E(a.next)}</div>`:''}
+            ${a.prev&&a.prev!=='—'?`<div style="color:var(--mut);font-size:12.5px">${E(a.prev)} → ${E(a.next)}</div>`:''}
             ${a.rs?`<div class="rs">Reason: ${E(a.rs)}</div>`:''}</div></div>`).join('')
           ||'<p style="color:var(--mut);font-size:13.5px">No events recorded.</p>'}</div>
       </div></div>
     </div>
-  </div>
-
-  <div class="c sec"><div class="h"><h3>Release milestones</h3>
-    <div class="r"><span class="tag">${r.milestones.filter(m=>m.status==='completed').length}/${MILESTONES.length} complete</span></div></div>
-    <div class="b flush"><div class="tw"><table>
-    <thead><tr><th>Milestone</th><th>Owner</th><th>Ideal date</th><th>Actual date</th><th>Status</th><th>Approval</th><th>Comments</th><th></th></tr></thead>
-    <tbody>${r.milestones.map(m=>{const c=MS(m.key);return `<tr>
-      <td class="tt" style="font-weight:500">${E(c.name)}${c.critical?' <span class="tag">Critical</span>':''}</td>
-      <td>${m.owner?E(U(m.owner).nm):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td class="mono" style="font-size:12px">${fd(m.ideal)}</td>
-      <td class="mono" style="font-size:12px">${fd(m.actual)}</td>
-      <td>${stt(m.status)}</td>
-      <td>${c.approval?(m.approved?`<span class="tick">✓ Approved</span><div class="mono" style="font-size:10.5px;color:var(--mut2);margin-top:2px">${m.approvedBy?E(m.approvedBy):''} ${fd(m.approvedOn)}</div>`:'<span style="color:var(--mut)">Pending</span>'):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td style="font-size:12.5px;color:var(--mut);max-width:180px">${m.comments?E(m.comments):'<span style="color:var(--mut2)">—</span>'}</td>
-      <td style="text-align:right">${canEditRelease(r)?`<button class="bt s" onclick="mEditMilestone('${r.id}','${m.key}')">Edit</button>`:''}</td>
-    </tr>`}).join('')}
-    </tbody></table></div></div></div>`;
+  </div>`;
 }
 
 /* ═══ conflict tracker → project tracker ═ */
 function setCF(k,v){cflt[k]=v;cflt.page=1;draw()}
-function clearCF(){cflt={q:'',status:'all',modeOfRelease:'all',releaseMonth:'all',progress:'all',sort:'default',page:1};draw()}
-/* Project tabs ARE separate datasets here (unlike Release Management's
-   tabs) — a row belongs to exactly one project. Current Status/Mode of
-   release/Release Month are freeform text in the source Excel (values
-   like "3/6 - Backlog", "Mar'26"), so their filter dropdowns are built
-   from whatever values actually occur in the current project's rows,
-   not a fixed enum. */
+function clearCF(){cflt={q:'',sort:'jiraAsc',page:1};draw()}
+/* The Conflict Tracker is a second editable view over the SAME New
+   Development records (`rels`). Search spans the visible columns; sort
+   mirrors the New Development grid's options. No project subsets — every
+   New Development item is one row here. */
 function filteredConflicts(){
-  return conflicts.filter(c=>{
-    if(c.project!==conflictProject)return false;
-    if(cflt.status!=='all'&&c.currentStatus!==cflt.status)return false;
-    if(cflt.modeOfRelease!=='all'&&c.modeOfRelease!==cflt.modeOfRelease)return false;
-    if(cflt.releaseMonth!=='all'&&c.releaseMonth!==cflt.releaseMonth)return false;
-    if(cflt.progress!=='all'&&!cfProgressTest(cflt.progress)(c))return false;
-    if(cflt.q){
-      const q=cflt.q.toLowerCase();
-      const hay=[c.wave,c.feature,c.story,c.description,c.developers].filter(Boolean).join(' ').toLowerCase();
-      if(!hay.includes(q))return false;
-    }
-    return true;
-  }).sort((a,b)=>{
-    if(cflt.sort==='wave')return (a.wave||'').localeCompare(b.wave||'');
-    if(cflt.sort==='story')return (a.story||'').localeCompare(b.story||'');
-    if(cflt.sort==='developers')return (a.developers||'').localeCompare(b.developers||'');
-    if(cflt.sort==='status')return (a.currentStatus||'').localeCompare(b.currentStatus||'');
-    if(cflt.sort==='releaseMonth')return (a.releaseMonth||'').localeCompare(b.releaseMonth||'');
-    return 0;
+  let rows=rels.slice();
+  if(cflt.q){
+    const q=cflt.q.toLowerCase();
+    rows=rows.filter(r=>[r.jira,r.team,r.po,r.scrum,r.assignee,r.nm,AL(r.activity),SU(r.status)]
+      .filter(Boolean).join(' ').toLowerCase().includes(q));
+  }
+  rows.sort((a,b)=>{
+    if(cflt.sort==='jiraDesc')return (b.jira||'').localeCompare(a.jira||'');
+    if(cflt.sort==='teamAsc')return (a.team||'').localeCompare(b.team||'')||(a.jira||'').localeCompare(b.jira||'');
+    return (a.jira||'').localeCompare(b.jira||'');
   });
+  return rows;
 }
-/* 17 stored columns (CF_FIELDS) + a computed Sl.no — exact order, matching
-   Project Tracker_2026.xlsx. Shared by the grid, CSV export, and (via
-   renderCflEditRow) the inline editor, so table and edit columns can't
-   drift apart. */
-function cfColumns(){
-  return CF_FIELDS.map(f=>({h:f.h,w:f.w,cell:c=>{
-    if(!c[f.key])return '<span style="color:var(--mut2)">—</span>';
-    if(f.type==='date')return fdShort(c[f.key]);
-    if(f.type==='month')return fdMonth(c[f.key]);
-    return E(c[f.key]);
-  }}));
+/* Display cell for each Conflict Tracker column — Activity and Status
+   render as their shared chips so this view matches New Development. */
+function cfCell(r,col){
+  if(col.key==='activity')return actChip(r);
+  if(col.key==='status')return stt(r.status);
+  if(col.type==='date')return r.date?`<span class="mono" style="font-size:12px">${fd(r.date)}</span>`:DASH;
+  const v=r[col.key];
+  return v?E(v):DASH;
 }
 function vConflicts(){
-  const canEditHere=hasPerm('edit_conflict');
-  const canDeleteHere=hasPerm('delete_conflict');
-  const canCreateHere=hasPerm('create_conflict');
-  const showActionCol=canEditHere||canDeleteHere;
-  const showDraft=canCreateHere&&draftConflict;
+  const canEditHere=canEdit();
+  const showActionCol=canEditHere;
+  const showDraft=canEditHere&&editingCflId==='draft'&&draftCfl;
   const all=filteredConflicts();
   const totalPages=Math.max(1,Math.ceil(all.length/CF_PAGE_SIZE));
   if(cflt.page>totalPages)cflt.page=totalPages;
   const pageStart=(cflt.page-1)*CF_PAGE_SIZE;
   const pageRows=all.slice(pageStart,pageStart+CF_PAGE_SIZE);
-  const projectRows=conflicts.filter(c=>c.project===conflictProject);
-  const hasRows=projectRows.length>0;
-  const showEmptyState=!hasRows&&!showDraft;
-  const uniq=key=>[...new Set(projectRows.map(c=>c[key]).filter(Boolean))].sort();
-  const statusValues=uniq('currentStatus'),modeValues=uniq('modeOfRelease'),monthValues=uniq('releaseMonth');
-  const cols=cfColumns();
-  const SLNO_W=70;
+  const cols=CF_COLS;
+  const SLNO_W=64;
   const tableWidth=SLNO_W+cols.reduce((s,c)=>s+c.w,0)+(showActionCol?170:0);
-  const projTabs=`<div class="seg" style="margin-top:16px;overflow-x:auto;max-width:100%">${PROJECT_NAMES.map(p=>
-    `<button style="white-space:nowrap;flex:0 0 auto" class="${p===conflictProject?'on':''}" onclick="setConflictTab('${E(p)}')">${E(p)}</button>`).join('')}</div>`;
+  const cfFiltersActive=cflt.q||cflt.sort!=='jiraAsc';
 
-  /* ── insights: derived only from real CF_FIELDS data, never invented.
-     "Completed" = reached the final (Prod) milestone; "Pending" = no
-     milestone started yet; everything else counts as "In progress". */
-  const completedCount=projectRows.filter(cfProgressTest('completed')).length;
-  const pendingCount=projectRows.filter(cfProgressTest('pending')).length;
-  const inProgressCount=projectRows.filter(cfProgressTest('inprogress')).length;
-  const upcomingCount=projectRows.filter(cfProgressTest('upcoming')).length;
-  const todayISO=now().slice(0,10);
-
-  const summaryCards=`<div class="sec"><div class="kpis">
-    ${kpiCard({label:'Total Rows',value:projectRows.length,icon:'📊',hint:`in ${E(conflictProject)}`,
-      act:{label:'View all rows',on:"goCfProgress('all')"}})}
-    ${kpiCard({accent:'a-go',label:'Completed',value:completedCount,icon:'✓',icCls:'go',hint:'reached Prod',
-      act:{label:'View completed',on:"goCfProgress('completed')"}})}
-    ${kpiCard({accent:'a-teal',label:'In Progress',value:inProgressCount,icon:'⏳',icCls:'teal',hint:'started, not yet live',
-      act:{label:'View in progress',on:"goCfProgress('inprogress')"}})}
-    ${kpiCard({accent:'a-wait',label:'Pending',value:pendingCount,icon:'⏱',icCls:'wait',hint:'no milestones started',
-      act:{label:'View pending',on:"goCfProgress('pending')"}})}
-    ${kpiCard({accent:'a-info',label:'Upcoming Milestones',value:upcomingCount,icon:'📅',hint:'due in the next 30 days',
-      act:{label:'View upcoming',on:"goCfProgress('upcoming')"}})}
-  </div></div>`;
-
-  const milestoneBars=CF_MILESTONE_FIELDS.map(f=>[f.h,projectRows.filter(c=>c[f.key]).length]);
-  const statusPalette=['var(--navy)','var(--teal)','var(--info)','var(--go)','var(--wait)','var(--stop)'];
-  const statusSegs=countBy(projectRows,c=>c.currentStatus||'Not set').slice(0,6)
-    .map(([label,count],i)=>({label,count,color:statusPalette[i%statusPalette.length]}));
-  const monthKeys=[...new Set(projectRows.map(c=>c.releaseMonth).filter(Boolean))].sort();
-  const monthBars=monthKeys.map(m=>[fdMonth(m),projectRows.filter(c=>c.releaseMonth===m).length]);
-  const devBars=countBy(projectRows,c=>c.developers||'Unassigned').slice(0,8);
-
-  const charts=`<div class="sec g2">
-    <div class="c"><div class="h"><h3>Milestone Progress</h3></div><div class="b">
-      ${milestoneBars.some(b=>b[1])?hbarChart(milestoneBars,'var(--teal)'):chartEmpty('📅','No milestone dates yet','Progress appears once SDD Review through Prod dates are filled in.')}
-    </div></div>
-    <div class="c"><div class="h"><h3>Current Status</h3></div><div class="b">
-      ${statusSegs.some(s=>s.count)?donutChart(statusSegs,'Rows'):chartEmpty('📶','No status values yet','Breakdown appears once Current Status is filled in.')}
-    </div></div>
-  </div>
-  <div class="sec g2">
-    <div class="c"><div class="h"><h3>Release Month Overview</h3></div><div class="b">
-      ${monthBars.length?hbarChart(monthBars,'var(--navy)'):chartEmpty('🗓','No release months yet','Overview appears once Release Month is filled in.')}
-    </div></div>
-    <div class="c"><div class="h"><h3>Developer Workload</h3></div><div class="b">
-      ${devBars.length?hbarChart(devBars,'var(--info)'):chartEmpty('👤','No developers yet','Workload appears once rows have a developer assigned.')}
-    </div></div>
-  </div>`;
-
-  const cfFiltersActive=cflt.q||cflt.progress!=='all'||cflt.status!=='all'||cflt.modeOfRelease!=='all'||cflt.releaseMonth!=='all'||cflt.sort!=='default';
-  const filterToolbar=`<div class="sec c"><div class="h"><h3>Find a row</h3>
+  const filterToolbar=`<div class="sec c"><div class="h"><h3>Find a record</h3>
     ${cfFiltersActive?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
     <div class="b">
     <div class="fg">
-      <div><label>Search</label><input id="cfq" value="${E(cflt.q)}" placeholder="Wave, Feature#, Story#, description, developers"
+      <div><label>Search</label><input id="cfq" value="${E(cflt.q)}" placeholder="Jira #, team, activity, status, PO, assignee"
         oninput="cflt.q=this.value;cflt.page=1;clearTimeout(window._cft);window._cft=setTimeout(()=>drawKeepCaret('cfq'),220)"></div>
-      <div><label>Progress</label><select onchange="setCF('progress',this.value)">
-        ${CF_PROGRESS.map(o=>`<option value="${o.k}" ${cflt.progress===o.k?'selected':''}>${E(o.nm)}</option>`).join('')}
-      </select></div>
-      <div><label>Current Status</label><select onchange="setCF('status',this.value)"><option value="all">All statuses</option>
-        ${statusValues.map(t=>`<option ${cflt.status===t?'selected':''}>${E(t)}</option>`).join('')}</select></div>
-      <div><label>Mode of release</label><select onchange="setCF('modeOfRelease',this.value)"><option value="all">All modes</option>
-        ${modeValues.map(t=>`<option ${cflt.modeOfRelease===t?'selected':''}>${E(t)}</option>`).join('')}</select></div>
-      <div><label>Release Month</label><select onchange="setCF('releaseMonth',this.value)"><option value="all">All months</option>
-        ${monthValues.map(t=>`<option value="${E(t)}" ${cflt.releaseMonth===t?'selected':''}>${E(fdMonth(t))}</option>`).join('')}</select></div>
       <div><label>Sort by</label><select onchange="setCF('sort',this.value)">
-        <option value="default" ${cflt.sort==='default'?'selected':''}>Row order</option>
-        <option value="wave" ${cflt.sort==='wave'?'selected':''}>Wave</option>
-        <option value="story" ${cflt.sort==='story'?'selected':''}>Story#</option>
-        <option value="developers" ${cflt.sort==='developers'?'selected':''}>Developers</option>
-        <option value="status" ${cflt.sort==='status'?'selected':''}>Current Status</option>
-        <option value="releaseMonth" ${cflt.sort==='releaseMonth'?'selected':''}>Release Month</option></select></div>
+        <option value="jiraAsc" ${cflt.sort==='jiraAsc'?'selected':''}>Jira # (A–Z)</option>
+        <option value="jiraDesc" ${cflt.sort==='jiraDesc'?'selected':''}>Jira # (Z–A)</option>
+        <option value="teamAsc" ${cflt.sort==='teamAsc'?'selected':''}>Team</option></select></div>
     </div>
-    <div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>
+    ${cfFiltersActive?`<div style="margin-top:14px"><button class="bt s" onclick="clearCF()">Clear filters</button></div>`:''}
   </div></div>`;
 
-  const gridCard=`<div class="c"><div class="h"><h3>${E(conflictProject)} · ${all.length}</h3>
+  const gridCard=`<div class="c"><div class="h"><h3>All New Development records · ${all.length}</h3>
     <div class="r"><span class="tag">${cols.length+1} columns</span></div></div>
     <div class="b flush">${(pageRows.length||showDraft)?`
     <div style="overflow:auto;max-height:70vh"><table class="xgrid" style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
@@ -2382,15 +2151,15 @@ function vConflicts(){
       ${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
       ${showActionCol?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
     <tbody>
-      ${showDraft?renderCflEditRow(draftConflict,true):''}
-      ${pageRows.map((c,i)=>{
-        if(editingCflId===c.id)return renderCflEditRow(c,false);
+      ${showDraft?renderCflEditRow(draftCfl,true):''}
+      ${pageRows.map((r,i)=>{
+        if(editingCflId===r.id)return renderCflEditRow(r,false);
         return `<tr>
       <td class="mono" style="font-size:12px;color:var(--mut2)">${pageStart+i+1}</td>
-      ${cols.map(col=>`<td style="white-space:nowrap">${col.cell(c)}</td>`).join('')}
+      ${cols.map(col=>`<td style="white-space:nowrap">${cfCell(r,col)}</td>`).join('')}
       ${showActionCol?`<td style="text-align:right;white-space:nowrap">
-        ${canEditHere?`<button class="bt s" onclick="editCflRow('${c.id}')">Edit</button>`:''}
-        ${canDeleteHere?`<button class="bt s d" onclick="mDelConflict('${c.id}')">Delete</button>`:''}
+        <button class="bt s" onclick="editCflRow('${r.id}')">Edit</button>
+        <button class="bt s" onclick="openR('${r.id}')">View</button>
       </td>`:''}
     </tr>`;
       }).join('')}
@@ -2403,45 +2172,17 @@ function vConflicts(){
         <button class="bt s" ${cflt.page>=totalPages?'disabled':''} onclick="cflt.page++;draw()">Next →</button>
       </div>
     </div>`
-    :`<div class="ept"><h4>No rows found</h4><p>No records match the current filters.</p>
-      <button class="bt s" style="margin-top:14px" onclick="clearCF()">Clear filters</button></div>`}
+    :(all.length?`<div class="ept"><h4>No records found</h4><p>No records match your search.</p>
+      <button class="bt s" style="margin-top:14px" onclick="clearCF()">Clear filters</button></div>`
+      :`<div class="ept"><h4>No records yet</h4><p>New Development records will appear here automatically.</p>
+      <button class="bt p" style="margin-top:14px" onclick="go('newdev')">Go to New Development</button></div>`)}
   </div></div>`;
 
-  const upcomingList=[];
-  projectRows.forEach(c=>CF_MILESTONE_FIELDS.forEach(f=>{if(c[f.key]&&c[f.key]>=todayISO)upcomingList.push({date:c[f.key],label:f.h,row:c})}));
-  upcomingList.sort((a,b)=>a.date.localeCompare(b.date));
-  const upcomingPanel=hasRows?`<div class="c"><div class="h"><h3>Upcoming Milestones</h3></div><div class="b flush">
-    ${upcomingList.length?upcomingList.slice(0,6).map(u=>`<div class="li"><div class="gr">
-      <div class="t">${E(u.label)} — ${E(u.row.wave||u.row.feature||u.row.story||u.row.id)}</div>
-      <div class="d">${E(u.row.description||'')}</div></div>
-      <div class="mono" style="font-size:11.5px;color:var(--mut);white-space:nowrap">${fdShort(u.date)}</div></div>`).join('')
-    :'<div class="ept"><p>No upcoming milestone dates in this project.</p></div>'}
-  </div></div>`:'';
-
-  if(showEmptyState){
-    return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
-      `<button class="bt" onclick="exportConflictsCsv()">Export</button>`,[
-        {label:`${conflicts.length} row${conflicts.length!==1?'s':''} across all projects`},
-        {label:`${PROJECT_NAMES.length} project tabs`,tone:'teal'}
-      ])+
-      projTabs+`<div class="sec"><div class="c"><div class="h"><h3>${E(conflictProject)}</h3>
-        <div class="r"><span class="tag">No rows</span></div></div><div class="b">
-        <div class="chart-empty">
-          <div class="ic">🗂</div>
-          <h4>No tracker records yet</h4>
-          <p>Add your first tracker row or import your Project Tracker Excel data to see project insights.</p>
-          ${canCreateHere?`<button class="bt p" style="margin-top:6px" onclick="mNewConflictRow()">+ Add Row</button>`:''}
-        </div>
-      </div></div></div>`;
-  }
-
-  const projectsWithRows=new Set(conflicts.map(c=>c.project)).size;
-  return head('cft',(canCreateHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
+  return head('cft',(canEditHere?`<button class="bt p" onclick="mNewConflictRow()">+ Add Row</button>`:'')+
     `<button class="bt" onclick="exportConflictsCsv()">Export</button>`,[
-      {label:`${conflicts.length} row${conflicts.length!==1?'s':''} across all projects`},
-      {label:`${projectsWithRows} of ${PROJECT_NAMES.length} project${PROJECT_NAMES.length!==1?'s':''} populated`,tone:'teal'}
-    ])+
-    projTabs+(hasRows?summaryCards+charts:'')+filterToolbar+`<div class="sec">${gridCard}</div>`+upcomingPanel;
+      {label:`${rels.length} record${rels.length!==1?'s':''}`},
+      {label:'Shared with New Development',tone:'teal'}
+    ])+filterToolbar+`<div class="sec">${gridCard}</div>`;
 }
 /* Approval-group cards show how many approval requests are actually
    open at that gate right now — real routing state, not filler. */
@@ -2449,71 +2190,71 @@ function openApprovalsForGroup(gid){
   return apps_.filter(a=>a.status==='open'&&a.grp===gid).length;
 }
 /* ═══ Excel-style inline row editing ═══════
-   Same pattern as Release Management's inline row editing — no popup.
-   "+ Add Row" inserts a blank draft row into the current project's grid;
-   an existing row's "Edit" button turns that row's cells into inputs in
-   place. */
+   Same records as New Development — editing a row here writes straight
+   back to that New Development record and persists. "+ Add Row" inserts a
+   blank draft that becomes a new New Development record on save. */
 function mNewConflictRow(){
-  if(draftConflict)return;
-  draftConflict={};
-  CF_FIELDS.forEach(f=>{draftConflict[f.key]=''});
+  if(editingCflId==='draft')return;
+  draftCfl={jira:'',team:'',activity:'DEVELOPMENT',status:'INPROGRESS',po:'',scrum:'',date:'',assignee:''};
   editingCflId='draft';
   draw();
 }
-function editCflRow(id){draftConflict=null;editingCflId=id;draw()}
-function cancelCflEdit(){editingCflId=null;draftConflict=null;draw()}
-function renderCflEditRow(c,isDraft){
+function editCflRow(id){draftCfl=null;editingCflId=id;draw()}
+function cancelCflEdit(){editingCflId=null;draftCfl=null;draw()}
+function renderCflEditRow(r,isDraft){
   let html=`<tr class="editing"><td class="mono" style="font-size:12px;color:var(--mut2)">${isDraft?'—':''}</td>`;
-  CF_FIELDS.forEach(f=>{
-    const type=(f.type==='date'||f.type==='month')?f.type:'text';
-    const w=type==='text'?100:135;
-    html+=`<td onclick="event.stopPropagation()"><input type="${type}" id="cf-e-${f.key}" value="${E(c[f.key]||'')}" style="width:100%;min-width:${w}px"></td>`;
+  CF_COLS.forEach(col=>{
+    let field;
+    if(col.opts==='activity'){
+      field=`<select id="cf-e-${col.key}" style="width:100%;min-width:${col.w}px">${ACTIVITIES.map(a=>
+        `<option value="${a.k}" ${(r[col.key]||'')===a.k?'selected':''}>${E(a.nm)}</option>`).join('')}</select>`;
+    }else if(col.opts==='status'){
+      field=`<select id="cf-e-${col.key}" style="width:100%;min-width:${col.w}px">${STATUSES.map(s=>
+        `<option value="${s.k}" ${(r[col.key]||'')===s.k?'selected':''}>${E(s.nm)}</option>`).join('')}</select>`;
+    }else{
+      const type=col.type==='date'?'date':'text';
+      field=`<input type="${type}" id="cf-e-${col.key}" value="${E(r[col.key]||'')}" style="width:100%;min-width:${col.w}px">`;
+    }
+    html+=`<td onclick="event.stopPropagation()">${field}</td>`;
   });
   html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-    <button class="bt p s" onclick="saveCflRow('${isDraft?'draft':c.id}')">Save</button>
+    <button class="bt p s" onclick="saveCflRow('${isDraft?'draft':r.id}')">Save</button>
     <button class="bt s" onclick="cancelCflEdit()">Cancel</button></td>`;
   return html+'</tr>';
 }
 function saveCflRow(id){
-  const description=document.getElementById('cf-e-description').value.trim();
-  if(!description){toast('Description is required');return}
-  const vals={};
-  CF_FIELDS.forEach(f=>{vals[f.key]=document.getElementById(`cf-e-${f.key}`).value.trim()});
+  const gv=k=>{const el=document.getElementById('cf-e-'+k);return el?el.value.trim():''};
+  const jira=gv('jira');
+  if(!jira){toast('Jira # is required');return}
+  const vals={jira,team:gv('team'),activity:gv('activity')||'DEVELOPMENT',status:gv('status')||'INPROGRESS',
+    po:gv('po'),scrum:gv('scrum'),date:gv('date')||null,assignee:gv('assignee')};
   if(id==='draft'){
-    const c={id:nid('CFL-'),project:conflictProject,...vals};
-    conflicts.push(c);
-    logAudit(`Added project tracker row — ${description.slice(0,60)}`,null,'—','—');
-    editingCflId=null;draftConflict=null;
-    draw();toast('Row saved');persist();
+    const r={id:nid('R'),ref:jira,jira:vals.jira,team:vals.team,nm:'',activity:vals.activity,status:vals.status,
+      assignee:vals.assignee,date:vals.date,po:vals.po,scrum:vals.scrum,bizOwner:null,financeUat:null,comments:'',
+      jiraObjects:blankJiraObjects(),milestones:blankMilestones(),cmts:[],atts:[]};
+    rels.push(r);
+    logAudit(`Added New Development record — ${jira}`,null,'—','—');
+    editingCflId=null;draftCfl=null;
+    draw();toast('Record saved');persist();
   }else{
-    const c=CF(id);if(!c)return;
-    Object.assign(c,vals);
-    logAudit(`Updated project tracker row — ${c.id}`,null,'—','—');
+    const r=R(id);if(!r)return;
+    Object.assign(r,vals);
+    logAudit(`Updated New Development record — ${r.jira}`,null,'—','—');
     editingCflId=null;
-    draw();toast('Row updated');persist();
+    draw();toast('Record updated');persist();
   }
 }
-function mDelConflict(id){
-  const c=CF(id);if(!c)return;
-  show(`<div class="h"><h3>Delete row?</h3><p>${E(c.description||c.id)} — this cannot be undone.</p></div>
-  <div class="b"></div>
-  <div class="f"><button class="bt" onclick="shut()">Cancel</button>
-    <button class="bt d" onclick="doDelConflict('${id}')">Delete</button></div>`);
-}
-function doDelConflict(id){
-  conflicts=conflicts.filter(c=>c.id!==id);
-  logAudit(`Deleted project tracker row ${id}`,null,'—','—');
-  shut();draw();toast('Row deleted');persist();
-}
 function exportConflictsCsv(){
-  const cols=cfColumns();
-  const rows=[['Sl.no',...cols.map(c=>c.h)]];
-  filteredConflicts().forEach((c,i)=>rows.push([i+1,...cols.map(col=>{
-    const div=document.createElement('div');div.innerHTML=col.cell(c);return div.textContent.trim();
+  const rows=[['Sl.no',...CF_COLS.map(c=>c.h)]];
+  filteredConflicts().forEach((r,i)=>rows.push([i+1,...CF_COLS.map(col=>{
+    if(col.key==='activity')return AL(r.activity);
+    if(col.key==='status')return SU(r.status);
+    if(col.type==='date')return r.date?fd(r.date):'';
+    return r[col.key]||'';
   })]));
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
-    a.href=u;a.download=`${conflictProject}-tracker.csv`;a.click();URL.revokeObjectURL(u);toast('Exported')}
+    a.href=u;a.download=`new-development-tracker.csv`;a.click();URL.revokeObjectURL(u);toast('Exported')}
   catch(e){navigator.clipboard?.writeText(csv);toast('Copied to clipboard')}
 }
 
@@ -3166,89 +2907,71 @@ function doEditMilestone(rid,key){
   shut();draw();toast('Milestone updated');persist();
 }
 /* ═══ Excel-style inline row editing ═════
-   No modal, no popup — the "New release" button inserts a blank draft row
-   directly into the My Team Release grid, and an existing row's "Edit"
+   No modal, no popup — the "New item" button inserts a blank draft row
+   directly into the New Development grid, and an existing row's "Edit"
    button turns that same row's cells into inputs, in place. Both paths
-   share renderEditRow()/saveRelRow() below. Only one row (draft or
-   existing) is ever being edited at a time. */
+   share renderEditRow()/saveRelRow() below. Columns mirror gridColumns()
+   for New Development: Jira #, Team, Activity, Current Status, Date,
+   Assignee. Only one row (draft or existing) is ever being edited at a
+   time. */
 let editingRelId=null, draftRelease=null;
-const MS_STATUS_KEYS=['notStarted','inProgress','completed','blocked'];
 function mNewRow(){
   if(draftRelease)return;
-  draftRelease={nm:'',workstream:'',jira:'',desc:'',po:'',scrum:'',bizOwner:'',financeUat:'',
-    comments:'',owner:'',milestones:blankMilestones()};
+  draftRelease={jira:'',team:'',nm:'',activity:'DEVELOPMENT',status:'INPROGRESS',
+    assignee:'',date:null,po:'',scrum:'',bizOwner:'',financeUat:'',comments:'',
+    jiraObjects:blankJiraObjects(),milestones:blankMilestones()};
   editingRelId='draft';
   draw();
 }
 function editRelRow(rid){draftRelease=null;editingRelId=rid;draw()}
 function cancelRelEdit(){editingRelId=null;draftRelease=null;draw()}
 function renderEditRow(r,isDraft){
-  const devs=users.filter(u=>u.role==='Release Management'&&u.active);
-  const t=(id,val)=>`<td onclick="event.stopPropagation()"><input id="${id}" value="${E(val||'')}" style="width:100%;min-width:110px"></td>`;
+  const t=(id,val,ph='')=>`<td onclick="event.stopPropagation()"><input id="${id}" value="${E(val||'')}" placeholder="${E(ph)}" style="width:100%;min-width:100px"></td>`;
   let html=`<tr class="k editing">`;
-  html+=t('re-nm',r.nm);
-  html+=t('re-workstream',r.workstream);
-  html+=t('re-jira',r.jira);
-  html+=t('re-desc',r.desc);
-  html+=t('re-po',r.po);
-  html+=t('re-scrum',r.scrum);
-  html+=t('re-bizowner',r.bizOwner);
-  html+=t('re-financeuat',r.financeUat);
-  MILESTONES.forEach(m=>{
-    const ms=(r.milestones||[]).find(x=>x.key===m.key)||{status:'notStarted',approved:false};
-    html+=`<td onclick="event.stopPropagation()"><select id="re-ms-${m.key}" style="width:100%">${
-      m.approval
-        ?`<option value="0" ${!ms.approved?'selected':''}>Pending</option><option value="1" ${ms.approved?'selected':''}>Approved</option>`
-        :MS_STATUS_KEYS.map(k=>`<option value="${k}" ${ms.status===k?'selected':''}>${STATES[k][0]}</option>`).join('')
-    }</select></td>`;
-  });
-  html+=t('re-comments',r.comments);
-  html+=`<td onclick="event.stopPropagation()"><select id="re-owner" style="width:100%"><option value="">— none —</option>
-    ${devs.map(u=>`<option value="${u.id}" ${r.owner===u.id?'selected':''}>${E(u.nm)}</option>`).join('')}</select></td>`;
+  html+=t('re-jira',r.jira,'JIRA #');
+  html+=t('re-team',r.team,'Team');
+  html+=`<td onclick="event.stopPropagation()"><select id="re-activity" style="width:100%">${
+    ACTIVITIES.map(a=>`<option value="${a.k}" ${r.activity===a.k?'selected':''}>${E(a.nm)}</option>`).join('')
+  }</select></td>`;
+  html+=`<td onclick="event.stopPropagation()"><select id="re-status" style="width:100%">${
+    STATUSES.map(s=>`<option value="${s.k}" ${r.status===s.k?'selected':''}>${E(s.nm)}</option>`).join('')
+  }</select></td>`;
+  html+=`<td onclick="event.stopPropagation()"><input id="re-date" type="date" value="${E(r.date||'')}" style="width:100%;min-width:130px"></td>`;
+  html+=t('re-assignee',r.assignee,'Assignee');
   html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
     <button class="bt p s" onclick="saveRelRow('${isDraft?'draft':r.id}')">Save</button>
     <button class="bt s" onclick="cancelRelEdit()">Cancel</button></td>`;
   return html+'</tr>';
 }
 function saveRelRow(id){
-  const nm=document.getElementById('re-nm').value.trim();
-  if(!nm){toast('Team Name is required');return}
+  const jira=document.getElementById('re-jira').value.trim();
+  if(!jira){toast('JIRA # is required');return}
+  const dateEl=document.getElementById('re-date');
   const vals={
-    nm,
-    workstream:document.getElementById('re-workstream').value.trim(),
-    jira:document.getElementById('re-jira').value.trim(),
-    desc:document.getElementById('re-desc').value.trim()||'No description given.',
-    po:document.getElementById('re-po').value.trim(),
-    scrum:document.getElementById('re-scrum').value.trim(),
-    bizOwner:document.getElementById('re-bizowner').value.trim(),
-    financeUat:document.getElementById('re-financeuat').value.trim(),
-    comments:document.getElementById('re-comments').value.trim(),
-    owner:document.getElementById('re-owner').value||null,
+    jira,
+    ref:jira,
+    team:document.getElementById('re-team').value.trim(),
+    activity:document.getElementById('re-activity').value,
+    status:document.getElementById('re-status').value,
+    date:(dateEl&&dateEl.value)?dateEl.value:null,
+    assignee:document.getElementById('re-assignee').value.trim(),
   };
-  const msVals={};
-  MILESTONES.forEach(m=>{
-    const v=document.getElementById(`re-ms-${m.key}`).value;
-    msVals[m.key]=m.approval?{approved:v==='1'}:{status:v};
-  });
-  const applyMilestones=r=>r.milestones.forEach(m=>{
-    const v=msVals[m.key];if(!v)return;
-    if('approved' in v)m.approved=v.approved;if('status' in v)m.status=v.status;
-  });
   if(id==='draft'){
-    const r={id:nid('R'),ref:'REL-'+(1044+rels.length),...vals,cur:'groom',st:blank('groom'),sv:STAGE_SCHEMA,cmts:[],atts:[],
-      milestones:blankMilestones()};
-    applyMilestones(r);
+    const r={id:nid('R'),...draftRelease,...vals};
+    r.jiraObjects=r.jiraObjects||blankJiraObjects();
+    r.milestones=r.milestones||blankMilestones();
+    r.cmts=r.cmts||[];r.atts=r.atts||[];
+    r.nm=r.nm||jira;
     rels.unshift(r);
-    logAudit('Created release',r.id,'—',SL('groom'));
+    logAudit('Created development item',r.id,'—',AL(r.activity));
     editingRelId=null;draftRelease=null;
-    draw();toast('Release created');persist();
+    draw();toast('Item created');persist();
   }else{
     const r=R(id);if(!r)return;
     Object.assign(r,vals);
-    applyMilestones(r);
-    logAudit('Updated release',r.id,'—','—');
+    logAudit('Updated development item',r.id,'—',AL(r.activity));
     editingRelId=null;
-    draw();toast('Release updated');persist();
+    draw();toast('Item updated');persist();
   }
 }
 function mDelRelease(rid){
@@ -3265,8 +2988,8 @@ function doDelRelease(rid){
   const v=document.getElementById('del-confirm').value.trim();
   if(v!==r.ref){document.getElementById('e-del').classList.add('on');return}
   rels=rels.filter(x=>x.id!==rid);
-  logAudit('Deleted release',null,r.ref,'—');
-  shut();go('relmgmt');toast(`${r.ref} deleted`);persist();
+  logAudit('Deleted development item',null,r.ref,'—');
+  shut();go('newdev');toast(`${r.ref} deleted`);persist();
 }
 function mPull(){
   show(`<div class="h"><h3>Record a pull or applied change</h3><p>Every other active owner is alerted immediately.</p></div>
