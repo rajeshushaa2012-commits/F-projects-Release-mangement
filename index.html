@@ -1975,55 +1975,97 @@ function exportReleaseGridCsv(catKey){
 }
 
 /* ═══ New Development detail ═════════════ */
-/* JIRA object types + labels used by the JIRA Objects editor. */
+/* JIRA object types + labels used by the JIRA Objects editor.
+   The editor works both on a saved record (rid = record id) and on the
+   in-memory Add draft (rid = 'draft'), so objects — including an uploaded
+   file — can be attached before the record is first saved. */
+function joTarget(rid){return rid==='draft'?draftRelease:R(rid);}
+/* Preserve unsaved main-form field values when a JIRA-object action forces a
+   re-render (Add Object / Save / Delete). Reads the re-* inputs, if present,
+   into the record/draft currently being edited. */
+function syncRelFormFields(){
+  if(!document.getElementById('re-jira'))return;
+  const tgt=editingRelId==='draft'?draftRelease:R(editingRelId);
+  if(!tgt)return;
+  const g=id=>document.getElementById(id),d=g('re-date');
+  tgt.nm=g('re-nm').value.trim();tgt.jira=g('re-jira').value.trim();
+  tgt.team=g('re-team').value.trim();tgt.activity=g('re-activity').value;
+  tgt.status=g('re-status').value;tgt.date=(d&&d.value)?d.value:null;
+  tgt.assignee=g('re-assignee').value.trim();tgt.po=g('re-po').value.trim();
+  tgt.scrum=g('re-scrum').value.trim();tgt.bizOwner=g('re-bizOwner').value.trim();
+  tgt.financeUat=g('re-financeUat').value.trim();
+}
 function joAdd(rid,type){
-  const r=R(rid);if(!r||!canEditRelease(r))return;
+  syncRelFormFields();
+  const r=joTarget(rid);if(!r||!canEditRelease(r))return;
   r.jiraObjects=r.jiraObjects||blankJiraObjects();
-  (r.jiraObjects[type]=r.jiraObjects[type]||[]).push({id:'JO'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:'',note:''});
+  (r.jiraObjects[type]=r.jiraObjects[type]||[]).push({id:'JO'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:'',note:'',file:'',data:''});
   joEdit[type+':'+(r.jiraObjects[type].length-1)]=true;draw();
 }
 function joDel(rid,type,i){
-  const r=R(rid);if(!r||!canEditRelease(r))return;
+  const r=joTarget(rid);if(!r||!canEditRelease(r))return;
   if(!confirm('Remove this JIRA object?'))return;
-  r.jiraObjects[type].splice(i,1);delete joEdit[type+':'+i];persist();draw();toast('Removed');
+  syncRelFormFields();
+  r.jiraObjects[type].splice(i,1);delete joEdit[type+':'+i];
+  if(rid!=='draft')persist();
+  draw();toast('Removed');
 }
-function joToggle(type,i){joEdit[type+':'+i]=!joEdit[type+':'+i];draw()}
+function joToggle(type,i){syncRelFormFields();joEdit[type+':'+i]=!joEdit[type+':'+i];draw()}
 function joSave(rid,type,i){
-  const r=R(rid);if(!r)return;
-  const nm=(document.getElementById('jon-'+type+'-'+i)||{}).value||'';
-  const nt=(document.getElementById('jod-'+type+'-'+i)||{}).value||'';
-  r.jiraObjects[type][i].name=nm.trim();r.jiraObjects[type][i].note=nt.trim();
-  joEdit[type+':'+i]=false;persist();draw();toast('Saved');
+  const r=joTarget(rid);if(!r)return;
+  syncRelFormFields();
+  const obj=r.jiraObjects[type][i];
+  obj.name=((document.getElementById('jon-'+type+'-'+i)||{}).value||'').trim();
+  obj.note=((document.getElementById('jod-'+type+'-'+i)||{}).value||'').trim();
+  const fileEl=document.getElementById('jof-'+type+'-'+i);
+  const finish=()=>{joEdit[type+':'+i]=false;if(rid!=='draft')persist();draw();toast('Saved');};
+  const f=fileEl&&fileEl.files&&fileEl.files[0];
+  if(f){
+    if(f.size>5*1024*1024){obj.file=f.name;obj.data='';toast('File over 5MB — name saved, contents skipped');finish();return;}
+    const rd=new FileReader();
+    rd.onload=()=>{obj.file=f.name;obj.data=rd.result;finish();};
+    rd.onerror=()=>{toast('Could not read file');finish();};
+    rd.readAsDataURL(f);
+  }else{finish();}
 }
 let joEdit={};
-function joSection(r){
+function joSection(r,rid){
+  rid=rid||r.id;
   const editable=canEditRelease(r);
   const jo=r.jiraObjects||blankJiraObjects();
+  const total=JIRA_OBJECT_TYPES.reduce((s,t)=>s+((jo[t.key]||[]).length),0);
+  const fileCell=o=>o.file
+    ?(o.data
+      ?`<a href="${o.data}" download="${E(o.file)}" onclick="event.stopPropagation()">${E(o.file)}</a>`
+      :`${E(o.file)} <span style="color:var(--mut2)">(no contents)</span>`)
+    :'<span style="color:var(--mut2)">—</span>';
   return `<div class="c sec"><div class="h"><h3>JIRA Objects</h3>
-    <div class="r"><span class="tag">${JIRA_OBJECT_TYPES.reduce((s,t)=>s+((jo[t.key]||[]).length),0)} object${JIRA_OBJECT_TYPES.reduce((s,t)=>s+((jo[t.key]||[]).length),0)!==1?'s':''}</span></div></div>
+    <div class="r"><span class="tag">${total} object${total!==1?'s':''}</span></div></div>
     <div class="b">
     ${JIRA_OBJECT_TYPES.map((t,ti)=>{
       const rows=jo[t.key]||[];
       return `<div style="margin-bottom:${ti<JIRA_OBJECT_TYPES.length-1?'20':'0'}px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div style="font-weight:600;font-size:13.5px">${ti+1}. ${E(t.nm)}</div>
-          ${editable?`<button class="bt s" onclick="joAdd('${r.id}','${t.key}')">Add</button>`:''}
+          ${editable?`<button class="bt s p" onclick="joAdd('${rid}','${t.key}')">Add Object</button>`:''}
         </div>
-        ${rows.length?`<div class="tw"><table><thead><tr><th style="width:40%">Name</th><th>Notes</th>${editable?'<th style="width:150px"></th>':''}</tr></thead>
+        ${rows.length?`<div class="tw"><table><thead><tr><th style="width:32%">Name</th><th>Notes</th><th style="width:22%">File</th>${editable?'<th style="width:150px"></th>':''}</tr></thead>
         <tbody>${rows.map((o,i)=>{
           const key=t.key+':'+i;
           if(editable&&joEdit[key])return `<tr>
             <td><input id="jon-${t.key}-${i}" value="${E(o.name||'')}" placeholder="e.g. XX_ORDER_FORM"></td>
             <td><input id="jod-${t.key}-${i}" value="${E(o.note||'')}" placeholder="Optional notes"></td>
+            <td><input id="jof-${t.key}-${i}" type="file" style="width:100%">${o.file?`<div style="font-size:11.5px;color:var(--mut);margin-top:3px">Current: ${E(o.file)}</div>`:''}</td>
             <td style="text-align:right;white-space:nowrap">
-              <button class="bt s p" onclick="joSave('${r.id}','${t.key}',${i})">Save</button>
-              <button class="bt s d" onclick="joDel('${r.id}','${t.key}',${i})">Delete</button></td></tr>`;
+              <button class="bt s p" onclick="joSave('${rid}','${t.key}',${i})">Save</button>
+              <button class="bt s d" onclick="joDel('${rid}','${t.key}',${i})">Delete</button></td></tr>`;
           return `<tr>
             <td class="tt" style="font-weight:500">${o.name?E(o.name):'<span style="color:var(--mut2)">Untitled</span>'}</td>
             <td style="color:var(--mut);font-size:12.5px">${o.note?E(o.note):'<span style="color:var(--mut2)">—</span>'}</td>
+            <td style="font-size:12.5px">${fileCell(o)}</td>
             ${editable?`<td style="text-align:right;white-space:nowrap">
               <button class="bt s" onclick="joToggle('${t.key}',${i})">Edit</button>
-              <button class="bt s d" onclick="joDel('${r.id}','${t.key}',${i})">Delete</button></td>`:''}</tr>`;
+              <button class="bt s d" onclick="joDel('${rid}','${t.key}',${i})">Delete</button></td>`:''}</tr>`;
         }).join('')}</tbody></table></div>`
         :`<div style="color:var(--mut2);font-size:12.5px;padding:6px 0">No ${E(t.nm)} objects yet.</div>`}
       </div>`;
@@ -2959,7 +3001,7 @@ function relInlineDetail(r){
     ${kv('Business Owner',r.bizOwner?E(r.bizOwner):'')}
     ${kv('Finance UAT Tester',r.financeUat?E(r.financeUat):'')}
   </div>
-  <div style="font-weight:600;font-size:12.5px;margin:8px 0 6px">JIRA Objects (${joCount})</div>
+  <div style="margin:12px 0">${joSection(r)}</div>
   <div style="font-weight:600;font-size:12.5px;margin:8px 0 6px">Milestones</div>
   <div style="display:flex;flex-wrap:wrap;gap:6px">${msRows}</div>`;
 }
@@ -2973,36 +3015,56 @@ function mNewRow(){
 }
 function editRelRow(rid){draftRelease=null;editingRelId=rid;draw()}
 function cancelRelEdit(){editingRelId=null;draftRelease=null;draw()}
+/* Full-record inline form — same field set, names, types and dropdown
+   values as relInlineDetail (the View), rendered as a full-width panel row
+   so Add and Edit produce records identical in structure to existing ones.
+   Includes the JIRA Objects editor (with file upload) wired to this same
+   record/draft, so objects can be attached before the first save. */
 function renderEditRow(r,isDraft){
-  const t=(id,val,ph='')=>`<td onclick="event.stopPropagation()"><input id="${id}" value="${E(val||'')}" placeholder="${E(ph)}" style="width:100%;min-width:100px"></td>`;
-  let html=`<tr class="k editing">`;
-  html+=t('re-jira',r.jira,'JIRA #');
-  html+=t('re-team',r.team,'Team');
-  html+=`<td onclick="event.stopPropagation()"><select id="re-activity" style="width:100%">${
-    ACTIVITIES.map(a=>`<option value="${a.k}" ${r.activity===a.k?'selected':''}>${E(a.nm)}</option>`).join('')
-  }</select></td>`;
-  html+=`<td onclick="event.stopPropagation()"><select id="re-status" style="width:100%">${
-    STATUSES.map(s=>`<option value="${s.k}" ${r.status===s.k?'selected':''}>${E(s.nm)}</option>`).join('')
-  }</select></td>`;
-  html+=`<td onclick="event.stopPropagation()"><input id="re-date" type="date" value="${E(r.date||'')}" style="width:100%;min-width:130px"></td>`;
-  html+=t('re-assignee',r.assignee,'Assignee');
-  html+=`<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-    <button class="bt p s" onclick="saveRelRow('${isDraft?'draft':r.id}')">Save</button>
-    <button class="bt s" onclick="cancelRelEdit()">Cancel</button></td>`;
-  return html+'</tr>';
+  const rid=isDraft?'draft':r.id;
+  const fld=(label,id,val,ph='')=>`<div><label>${E(label)}</label><input id="${id}" value="${E(val||'')}" placeholder="${E(ph)}"></div>`;
+  const sel=(label,id,opts,cur)=>`<div><label>${E(label)}</label><select id="${id}">${
+    opts.map(o=>`<option value="${o.k}" ${cur===o.k?'selected':''}>${E(o.nm)}</option>`).join('')}</select></div>`;
+  const form=`<div class="c sec"><div class="h"><h3>${isDraft?'New Development item':'Edit item'}</h3></div>
+    <div class="b"><div class="fg">
+      <div style="grid-column:1/-1"><label>Summary/Description</label><input id="re-nm" value="${E(r.nm||'')}" placeholder="Summary / description"></div>
+      ${fld('Jira #','re-jira',r.jira,'e.g. CD-693')}
+      ${fld('Team','re-team',r.team,'Workstream / team')}
+      ${sel('Activity','re-activity',ACTIVITIES,r.activity)}
+      ${sel('Current Status','re-status',STATUSES,r.status)}
+      <div><label>Date</label><input id="re-date" type="date" value="${E(r.date||'')}"></div>
+      ${fld('Assignee','re-assignee',r.assignee,'Assignee')}
+      ${fld('PO','re-po',r.po,'Product Owner')}
+      ${fld('Scrum Master','re-scrum',r.scrum,'Scrum Master')}
+      ${fld('Business Owner','re-bizOwner',r.bizOwner,'Business Owner')}
+      ${fld('Finance UAT Tester','re-financeUat',r.financeUat,'Finance UAT Tester')}
+    </div>
+    <div style="margin-top:16px">${joSection(r,rid)}</div>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="bt p" onclick="saveRelRow('${rid}')">Save</button>
+      <button class="bt" onclick="cancelRelEdit()">Cancel</button>
+    </div></div></div>`;
+  return `<tr class="expand editing"><td colspan="99" style="background:var(--sunk);padding:0" onclick="event.stopPropagation()">
+    <div style="padding:16px 20px">${form}</div></td></tr>`;
 }
 function saveRelRow(id){
-  const jira=document.getElementById('re-jira').value.trim();
+  const g=id=>document.getElementById(id);
+  const jira=g('re-jira').value.trim();
   if(!jira){toast('JIRA # is required');return}
-  const dateEl=document.getElementById('re-date');
+  const dateEl=g('re-date');
   const vals={
     jira,
     ref:jira,
-    team:document.getElementById('re-team').value.trim(),
-    activity:document.getElementById('re-activity').value,
-    status:document.getElementById('re-status').value,
+    nm:g('re-nm').value.trim(),
+    team:g('re-team').value.trim(),
+    activity:g('re-activity').value,
+    status:g('re-status').value,
     date:(dateEl&&dateEl.value)?dateEl.value:null,
-    assignee:document.getElementById('re-assignee').value.trim(),
+    assignee:g('re-assignee').value.trim(),
+    po:g('re-po').value.trim(),
+    scrum:g('re-scrum').value.trim(),
+    bizOwner:g('re-bizOwner').value.trim(),
+    financeUat:g('re-financeUat').value.trim(),
   };
   if(id==='draft'){
     const r={id:nid('R'),...draftRelease,...vals};
