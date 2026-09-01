@@ -1878,88 +1878,12 @@ function releaseTabs(cur){
     `<button class="rtab ${cur===k?'on':''}" onclick="relTab('${k}')">${E(l)}</button>`).join('')}</div>`;
 }
 function vReleaseGrid(){
-  const isNewDev=view==='newdev';
-  const isMine=view==='myrel';
-  const headKey=isMine?'myrel':(isNewDev?'newdev':'bms');
-  const editable=isNewDev;
-  const canCreateHere=isNewDev&&hasPerm('create_release');
-  const canEditHere=isNewDev&&hasPerm('edit_release');
-  const canDeleteHere=isNewDev&&hasPerm('delete_release');
-  // My Release always shows a per-row action (the New Development button + View).
-  const showActionCol=isMine||canEditHere||canDeleteHere;
-  const showDraft=canCreateHere&&draftRelease;
-  const all=filteredReleases(view);
-  const totalPages=Math.max(1,Math.ceil(all.length/REL_PAGE_SIZE));
-  if(rflt.page>totalPages)rflt.page=totalPages;
-  const pageRows=all.slice((rflt.page-1)*REL_PAGE_SIZE,rflt.page*REL_PAGE_SIZE);
-  const cols=gridColumns();
-  const tableWidth=cols.reduce((s,c)=>s+c.w,0)+(showActionCol?190:0);
-  const inprog=rels.filter(r=>r.status==='INPROGRESS').length;
-  const doneN=rels.filter(r=>r.status==='COMPLETED').length;
-  const rowActions=r=>{
-    const expanded=expandedRelId===r.id;
-    const viewBtn=`<button class="bt s" onclick="toggleRelExpand('${r.id}')">${expanded?'Hide':'View'}</button>`;
-    if(isMine)return `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-      ${viewBtn}
-      <button class="bt s" onclick="relTab('newdev');editRelRow('${r.id}')">Edit</button>
-      <button class="bt s p" onclick="relTab('newdev')">New Development</button></td>`;
-    if(!showActionCol)return '';
-    return `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-      ${viewBtn}
-      ${canEditHere?`<button class="bt s" onclick="editRelRow('${r.id}')">Edit</button>`:''}
-      ${canCreateHere?`<button class="bt s p" onclick="mNewRow()">Add</button>`:''}
-      ${canDeleteHere?`<button class="bt s d" onclick="mDelRelease('${r.id}')">Delete</button>`:''}
-    </td>`;
-  };
-  return releaseTabs(view)+
-    (view==='bms'?`<div class="sec"><div class="mt">Read-only view — the same New Development records. Open New Development to edit.</div></div>`:'')+
-    (isNewDev?releasePipeline():'')+`
-  <div class="sec c"><div class="h"><h3>Find an item</h3>
-    ${(rflt.q||rflt.sort!=='jiraAsc')?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
-    <div class="b">
-    <div class="fg">
-      <div><label>Search</label><input id="rfq" value="${E(rflt.q)}" placeholder="Jira #, team, assignee, activity, status..."
-        oninput="rflt.q=this.value;rflt.page=1;clearTimeout(window._rf);window._rf=setTimeout(()=>drawKeepCaret('rfq'),220)"></div>
-      <div><label>Sort by</label><select onchange="setRF('sort',this.value)">
-        <option value="jiraAsc" ${rflt.sort==='jiraAsc'?'selected':''}>Jira # (A–Z)</option>
-        <option value="jiraDesc" ${rflt.sort==='jiraDesc'?'selected':''}>Jira # (Z–A)</option>
-        <option value="teamAsc" ${rflt.sort==='teamAsc'?'selected':''}>Team (A–Z)</option></select></div>
-    </div>
-    <div style="margin-top:14px"><button class="bt s" onclick="clearRF()">Clear filters</button></div>
-  </div></div>
-
-  <div class="c"><div class="h"><h3>${E(TITLES[headKey][0])} · ${all.length}</h3>
-    <div class="r"><span class="tag">${editable?'Editable':'Read-only'}</span>
-      <span class="tag">${cols.length} columns</span>
-      <button class="bt s" onclick="exportReleaseGridCsv('${view}')">Export</button></div></div>
-    <div class="b flush">${(pageRows.length||showDraft)?`
-    <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
-    <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}
-      ${showActionCol?'<th style="position:sticky;top:0;z-index:1;background:var(--sunk)"></th>':''}</tr></thead>
-    <tbody>
-      ${showDraft?renderEditRow(draftRelease,true):''}
-      ${pageRows.map(r=>{
-        if(isNewDev&&editingRelId===r.id)return renderEditRow(r,false);
-        const colCount=cols.length+(showActionCol?1:0);
-        const detail=expandedRelId===r.id?`<tr class="expand"><td colspan="${colCount}" style="background:var(--sunk);padding:0">
-          <div style="padding:16px 20px">${relInlineDetail(r)}</div></td></tr>`:'';
-        return `<tr class="k" onclick="toggleRelExpand('${r.id}')">
-      ${cols.map(c=>`<td style="white-space:nowrap">${c.cell(r)}</td>`).join('')}
-      ${rowActions(r)}
-    </tr>${detail}`;
-      }).join('')}
-    </tbody></table></div>
-    <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?((rflt.page-1)*REL_PAGE_SIZE+1):0}–${(rflt.page-1)*REL_PAGE_SIZE+pageRows.length} of ${all.length}</span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="bt s" ${rflt.page<=1?'disabled':''} onclick="rflt.page--;draw()">← Prev</button>
-        <span style="font-size:12.5px;color:var(--mut)">Page ${rflt.page} of ${totalPages}</span>
-        <button class="bt s" ${rflt.page>=totalPages?'disabled':''} onclick="rflt.page++;draw()">Next →</button>
-      </div>
-    </div>`
-    :rflt.q?`<div class="ept"><h4>No items found</h4><p>No records match the current search.</p>
-      <button class="bt s" style="margin-top:14px" onclick="clearRF()">Clear filters</button></div>`
-    :`<div class="ept"><h4>No items yet</h4><p>${canCreateHere?'Create one to get started.':'Nothing has been added yet.'}</p></div>`}
+  // Cleared shell — all data and columns removed pending new requirements.
+  // My Release, New Development, and BMS Release share this render; the tab
+  // strip stays for navigation, everything else is intentionally blank.
+  return releaseTabs(view)+`
+  <div class="c"><div class="b">
+    <div class="ept"><h4>Empty</h4><p>This tab has been cleared. New requirements pending.</p></div>
   </div></div>`;
 }
 function exportReleaseGridCsv(catKey){
