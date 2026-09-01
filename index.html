@@ -1213,7 +1213,7 @@ function draw(){
   }
   if(!hasPerm('view_releases')){v.innerHTML=vRO('You need the view_releases permission to see this page.');return}
   if(view==='myrel'||view==='newdev'||view==='bms'){v.innerHTML=vReleaseGrid();return}
-  v.innerHTML=({dash:vDash,mine:vMine,rel:vRel,cal:vCal,chg:vChg,mail:vMail,note:vNote,
+  v.innerHTML=({dash:vDash,mine:vMine,rel:vRel,myrelform:vMyRelForm,cal:vCal,chg:vChg,mail:vMail,note:vNote,
     aud:vAud,usr:vUsr,grp:vGrp,cmp:vCmp,tpl:vTpl}[view]||vDash)();
 }
 /* draw() replaces view.innerHTML, so the element being typed into is thrown
@@ -1872,7 +1872,7 @@ function gridColumns(){
 /* Internal tab strip for the single "Release Management" page.
    The three tabs reuse the existing view keys (myrel/newdev/bms) so all
    grid logic downstream stays unchanged; switching just resets the pager. */
-function relTab(k){rflt.page=1;editingRelId=null;draftRelease=null;view=k;openRel=null;relLanding=false;draw();window.scrollTo(0,0)}
+function relTab(k){rflt.page=1;editingRelId=null;draftRelease=null;myRelFormId=null;view=k;openRel=null;relLanding=false;draw();window.scrollTo(0,0)}
 function releaseTabs(cur){
   // Three tabs in fixed order: My Release | Team Release | BMS Release.
   // Internal view keys stay myrel/newdev/bms; only the middle label changed.
@@ -1905,32 +1905,108 @@ function myReleaseColumns(){
 const MYREL_INP='width:100%;box-sizing:border-box;border:1px solid var(--line);background:var(--card,transparent);padding:5px 7px;border-radius:6px;font-size:12.5px;color:inherit;font-family:inherit';
 function myRelSet(id,field,val){const r=R(id);if(!r)return;r[field]=val;persist()}
 function myRelSetMs(id,key,val){const r=R(id);if(!r)return;r.milestones=r.milestones||blankMilestones();r.milestones[key]=val||null;persist()}
-function myRelAddRow(){
-  const r={id:nid('R'),ref:'',jira:'',team:'',nm:'',activity:'DEVELOPMENT',status:'INPROGRESS',
-    assignee:'',date:null,po:'',scrum:'',bizOwner:'',financeUat:'',comments:'',relMonth:'',
-    jiraObjects:blankJiraObjects(),milestones:blankMilestones(),cmts:[],atts:[]};
-  rels.unshift(r);rflt.page=1;draw();toast('Row added');persist();
-}
+/* My Release now opens a separate page for Add / View / Edit instead of
+   editing inline. myRelFormId holds the target: 'new' for a blank add form,
+   a record id for edit. myRelFormMode is 'view' (read-only) or 'edit'. */
+let myRelFormId=null, myRelFormMode='edit';
+function myRelAddRow(){myRelFormId='new';myRelFormMode='edit';view='myrelform';draw();window.scrollTo(0,0)}
+function myRelViewRow(id){myRelFormId=id;myRelFormMode='view';view='myrelform';draw();window.scrollTo(0,0)}
+function myRelEditOpen(id){myRelFormId=id;myRelFormMode='edit';view='myrelform';draw();window.scrollTo(0,0)}
+function myRelFormBack(){myRelFormId=null;view='myrel';draw();window.scrollTo(0,0)}
 function myRelDelRow(id){
   const i=rels.findIndex(r=>r.id===id);if(i<0)return;
-  rels.splice(i,1);draw();toast('Row deleted');persist();
+  rels.splice(i,1);myRelFormId=null;view='myrel';draw();toast('Row deleted');persist();
 }
+/* Read-only display row for the My Release table. Editing happens on the
+   separate form page (vMyRelForm) — the Actions cell offers View + Edit. */
 function myRelEditRow(r){
   const prod=r.milestones&&r.milestones.prod?r.milestones.prod:'';
   const notes=r.milestones&&r.milestones.notes!=null?r.milestones.notes:'';
   const monthVal=r.relMonth!=null&&r.relMonth!==''?r.relMonth:relMonth(prod);
-  const opt=(list,cur,lbl)=>list.map(o=>`<option value="${o.k}" ${cur===o.k?'selected':''}>${E(lbl(o.k))}</option>`).join('');
+  const cell=v=>v?E(String(v)):'<span style="color:var(--mut2)">—</span>';
   return `<tr>
-    <td><input style="${MYREL_INP}" value="${E(r.jira)}" placeholder="JIRA" onchange="myRelSet('${r.id}','jira',this.value.trim())"></td>
-    <td><input style="${MYREL_INP}" value="${E(r.team)}" placeholder="Team" onchange="myRelSet('${r.id}','team',this.value.trim())"></td>
-    <td><select style="${MYREL_INP}" onchange="myRelSet('${r.id}','activity',this.value)">${opt(ACTIVITIES,r.activity,AL)}</select></td>
-    <td><select style="${MYREL_INP}" onchange="myRelSet('${r.id}','status',this.value)">${opt(STATUSES,r.status,SU)}</select></td>
-    <td><input style="${MYREL_INP}" value="${E(r.assignee)}" placeholder="Assignee" onchange="myRelSet('${r.id}','assignee',this.value.trim())"></td>
-    <td><input style="${MYREL_INP}" value="${E(monthVal)}" placeholder="e.g. August 2026" onchange="myRelSet('${r.id}','relMonth',this.value.trim())"></td>
-    <td><input type="date" style="${MYREL_INP}" value="${E(prod)}" onchange="myRelSetMs('${r.id}','prod',this.value)"></td>
-    <td><input style="${MYREL_INP}" value="${E(notes)}" placeholder="Release notes" onchange="myRelSetMs('${r.id}','notes',this.value.trim())"></td>
-    <td style="text-align:right;white-space:nowrap"><button class="bt s d" onclick="myRelDelRow('${r.id}')">Delete Row</button></td>
+    <td class="mono" style="font-size:12px">${cell(r.jira)}</td>
+    <td>${cell(r.team)}</td>
+    <td>${cell(AL(r.activity))}</td>
+    <td>${stt(r.status)}</td>
+    <td>${cell(r.assignee)}</td>
+    <td>${cell(monthVal)}</td>
+    <td class="mono" style="font-size:12px">${prod?fd(prod):'<span style="color:var(--mut2)">—</span>'}</td>
+    <td>${cell(notes)}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="bt s" onclick="myRelViewRow('${r.id}')">View</button>
+      <button class="bt s p" style="margin-left:6px" onclick="myRelEditOpen('${r.id}')">Edit</button>
+    </td>
   </tr>`;
+}
+/* Separate Add / View / Edit page for My Release records. */
+function vMyRelForm(){
+  const isNew=myRelFormId==='new';
+  const r=isNew?null:R(myRelFormId);
+  if(!isNew&&!r){myRelFormBack();return ''}
+  const view_=(!isNew&&myRelFormMode==='view');
+  const prod=r&&r.milestones&&r.milestones.prod?r.milestones.prod:'';
+  const notes=r&&r.milestones&&r.milestones.notes!=null?r.milestones.notes:'';
+  const monthVal=r?(r.relMonth!=null&&r.relMonth!==''?r.relMonth:relMonth(prod)):'';
+  const g=(v)=>v?E(String(v)):'<span style="color:var(--mut2)">—</span>';
+  const opt=(list,cur,lbl)=>list.map(o=>`<option value="${o.k}" ${cur===o.k?'selected':''}>${E(lbl(o.k))}</option>`).join('');
+  const title=isNew?'Add Release':view_?'View Release':'Edit Release';
+  const head=`<div class="ph"><div class="phl">
+    <button class="lk" style="margin-bottom:12px" onclick="myRelFormBack()">← My Release</button>
+    <h1>${E(title)}</h1></div>
+    ${view_?`<div class="acts"><button class="bt p" onclick="myRelEditOpen('${r.id}')">Edit</button></div>`:''}</div>`;
+  if(view_){
+    return head+`<div class="c sec"><div class="b"><div class="kv">
+      <div class="k">JIRA</div><div class="mono" style="font-size:12.5px">${g(r.jira)}</div>
+      <div class="k">Team</div><div>${g(r.team)}</div>
+      <div class="k">Activity</div><div>${g(AL(r.activity))}</div>
+      <div class="k">Current Status</div><div>${stt(r.status)}</div>
+      <div class="k">Assignee</div><div>${g(r.assignee)}</div>
+      <div class="k">Release Month</div><div>${g(monthVal)}</div>
+      <div class="k">Release Date</div><div class="mono" style="font-size:12.5px">${prod?fd(prod):'<span style="color:var(--mut2)">—</span>'}</div>
+      <div class="k">Release Notes</div><div>${g(notes)}</div>
+    </div></div></div>`;
+  }
+  const cur=r||{jira:'',team:'',activity:'DEVELOPMENT',status:'INPROGRESS',assignee:''};
+  return head+`<div class="c sec"><div class="b"><div class="fg">
+    <div><label>JIRA</label><input id="mf-jira" value="${E(cur.jira||'')}" placeholder="JIRA"></div>
+    <div><label>Team</label><input id="mf-team" value="${E(cur.team||'')}" placeholder="Team"></div>
+    <div><label>Activity</label><select id="mf-activity">${opt(ACTIVITIES,cur.activity,AL)}</select></div>
+    <div><label>Current Status</label><select id="mf-status">${opt(STATUSES,cur.status,SU)}</select></div>
+    <div><label>Assignee</label><input id="mf-assignee" value="${E(cur.assignee||'')}" placeholder="Assignee"></div>
+    <div><label>Release Month</label><input id="mf-month" value="${E(monthVal)}" placeholder="e.g. August 2026"></div>
+    <div><label>Release Date</label><input id="mf-date" type="date" value="${E(prod)}"></div>
+    <div style="grid-column:1/-1"><label>Release Notes</label><input id="mf-notes" value="${E(notes)}" placeholder="Release notes"></div>
+  </div>
+  <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
+    <button class="bt p" onclick="myRelFormSave()">Save</button>
+    <button class="bt" onclick="myRelFormBack()">Cancel</button>
+    ${!isNew?`<button class="bt d" style="margin-left:auto" onclick="myRelDelRow('${r.id}')">Delete</button>`:''}
+  </div></div></div>`;
+}
+function myRelFormSave(){
+  const g=id=>document.getElementById(id);
+  const jira=g('mf-jira').value.trim();
+  if(!jira){toast('JIRA is required');return}
+  const dateEl=g('mf-date');
+  const prod=(dateEl&&dateEl.value)?dateEl.value:'';
+  const notes=g('mf-notes').value.trim();
+  const month=g('mf-month').value.trim();
+  const vals={jira,ref:jira,team:g('mf-team').value.trim(),activity:g('mf-activity').value,
+    status:g('mf-status').value,assignee:g('mf-assignee').value.trim(),relMonth:month};
+  if(myRelFormId==='new'){
+    const r={id:nid('R'),nm:'',po:'',scrum:'',bizOwner:'',financeUat:'',comments:'',date:null,
+      jiraObjects:blankJiraObjects(),milestones:blankMilestones(),cmts:[],atts:[],...vals};
+    r.milestones.prod=prod||null;r.milestones.notes=notes;
+    rels.unshift(r);rflt.page=1;
+    myRelFormId=null;view='myrel';draw();toast('Release added');persist();
+  }else{
+    const r=R(myRelFormId);if(!r)return;
+    Object.assign(r,vals);
+    r.milestones=r.milestones||blankMilestones();
+    r.milestones.prod=prod||null;r.milestones.notes=notes;
+    myRelFormId=null;view='myrel';draw();toast('Release updated');persist();
+  }
 }
 function vMyRelease(){
   const HEADS=['JIRA','Team','Activity','Current Status','Assignee','Release Month','Release Date','Release Notes'];
@@ -1955,8 +2031,7 @@ function vMyRelease(){
   </div></div>
 
   <div class="c"><div class="h"><h3>My Release · ${all.length}</h3>
-    <div class="r"><span class="tag">Editable</span>
-      <span class="tag">${HEADS.length} columns</span>
+    <div class="r"><span class="tag">${HEADS.length} columns</span>
       <button class="bt s" onclick="exportMyReleaseCsv()">Export</button></div></div>
     <div class="b flush">
     <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
