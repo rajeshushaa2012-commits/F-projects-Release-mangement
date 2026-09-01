@@ -1909,13 +1909,37 @@ function myRelSetMs(id,key,val){const r=R(id);if(!r)return;r.milestones=r.milest
    editing inline. myRelFormId holds the target: 'new' for a blank add form,
    a record id for edit. myRelFormMode is 'view' (read-only) or 'edit'. */
 let myRelFormId=null, myRelFormMode='edit';
-function myRelAddRow(){myRelFormId='new';myRelFormMode='edit';view='myrelform';draw();window.scrollTo(0,0)}
+/* Add mode edits an in-memory draft so JIRA Objects can be attached before the
+   record is first saved. The draft is committed on Save, discarded on Cancel. */
+function myRelAddRow(){
+  myRelFormId='new';myRelFormMode='edit';
+  draftRelease={id:nid('R'),nm:'',po:'',scrum:'',bizOwner:'',financeUat:'',comments:'',date:null,
+    jira:'',ref:'',team:'',activity:'DEVELOPMENT',status:'INPROGRESS',assignee:'',relMonth:'',
+    jiraObjects:blankJiraObjects(),milestones:blankMilestones(),cmts:[],atts:[]};
+  view='myrelform';draw();window.scrollTo(0,0);
+}
 function myRelViewRow(id){myRelFormId=id;myRelFormMode='view';view='myrelform';draw();window.scrollTo(0,0)}
 function myRelEditOpen(id){myRelFormId=id;myRelFormMode='edit';view='myrelform';draw();window.scrollTo(0,0)}
-function myRelFormBack(){myRelFormId=null;view='myrel';draw();window.scrollTo(0,0)}
+function myRelFormBack(){myRelFormId=null;draftRelease=null;view='myrel';draw();window.scrollTo(0,0)}
 function myRelDelRow(id){
   const i=rels.findIndex(r=>r.id===id);if(i<0)return;
-  rels.splice(i,1);myRelFormId=null;view='myrel';draw();toast('Row deleted');persist();
+  rels.splice(i,1);myRelFormId=null;draftRelease=null;view='myrel';draw();toast('Row deleted');persist();
+}
+/* Preserve unsaved main-form field values when a JIRA-object action (Add/Save/
+   Delete) forces a re-render. Writes the mf-* inputs into the record/draft
+   currently being edited on the My Release form. */
+function myRelSyncFields(){
+  if(!document.getElementById('mf-jira'))return;
+  const tgt=myRelFormId==='new'?draftRelease:R(myRelFormId);
+  if(!tgt)return;
+  const g=id=>document.getElementById(id),d=g('mf-date');
+  tgt.jira=g('mf-jira').value.trim();tgt.ref=tgt.jira;
+  tgt.team=g('mf-team').value.trim();tgt.activity=g('mf-activity').value;
+  tgt.status=g('mf-status').value;tgt.assignee=g('mf-assignee').value.trim();
+  tgt.relMonth=g('mf-month').value.trim();
+  tgt.milestones=tgt.milestones||blankMilestones();
+  tgt.milestones.prod=(d&&d.value)?d.value:null;
+  tgt.milestones.notes=g('mf-notes').value.trim();
 }
 /* Read-only display row for the My Release table. Editing happens on the
    separate form page (vMyRelForm) — the Actions cell offers View + Edit. */
@@ -1965,24 +1989,33 @@ function vMyRelForm(){
       <div class="k">Release Month</div><div>${g(monthVal)}</div>
       <div class="k">Release Date</div><div class="mono" style="font-size:12.5px">${prod?fd(prod):'<span style="color:var(--mut2)">—</span>'}</div>
       <div class="k">Release Notes</div><div>${g(notes)}</div>
-    </div></div></div>`;
+    </div></div></div>
+    ${joSection(r,r.id,true)}`;
   }
-  const cur=r||{jira:'',team:'',activity:'DEVELOPMENT',status:'INPROGRESS',assignee:''};
+  /* Add mode edits the in-memory draft (rid 'draft') so JIRA Objects attach
+     before first save; Edit mode edits the live record directly. */
+  const cur=isNew?(draftRelease||{}):r;
+  const objRid=isNew?'draft':r.id;
+  const objTarget=isNew?draftRelease:r;
+  const dProd=isNew?(cur.milestones&&cur.milestones.prod?cur.milestones.prod:''):prod;
+  const dNotes=isNew?(cur.milestones&&cur.milestones.notes!=null?cur.milestones.notes:''):notes;
+  const dMonth=isNew?(cur.relMonth||''):monthVal;
   return head+`<div class="c sec"><div class="b"><div class="fg">
     <div><label>JIRA</label><input id="mf-jira" value="${E(cur.jira||'')}" placeholder="JIRA"></div>
     <div><label>Team</label><input id="mf-team" value="${E(cur.team||'')}" placeholder="Team"></div>
-    <div><label>Activity</label><select id="mf-activity">${opt(ACTIVITIES,cur.activity,AL)}</select></div>
-    <div><label>Current Status</label><select id="mf-status">${opt(STATUSES,cur.status,SU)}</select></div>
+    <div><label>Activity</label><select id="mf-activity">${opt(ACTIVITIES,cur.activity||'DEVELOPMENT',AL)}</select></div>
+    <div><label>Current Status</label><select id="mf-status">${opt(STATUSES,cur.status||'INPROGRESS',SU)}</select></div>
     <div><label>Assignee</label><input id="mf-assignee" value="${E(cur.assignee||'')}" placeholder="Assignee"></div>
-    <div><label>Release Month</label><input id="mf-month" value="${E(monthVal)}" placeholder="e.g. August 2026"></div>
-    <div><label>Release Date</label><input id="mf-date" type="date" value="${E(prod)}"></div>
-    <div style="grid-column:1/-1"><label>Release Notes</label><input id="mf-notes" value="${E(notes)}" placeholder="Release notes"></div>
+    <div><label>Release Month</label><input id="mf-month" value="${E(dMonth)}" placeholder="e.g. August 2026"></div>
+    <div><label>Release Date</label><input id="mf-date" type="date" value="${E(dProd)}"></div>
+    <div style="grid-column:1/-1"><label>Release Notes</label><input id="mf-notes" value="${E(dNotes)}" placeholder="Release notes"></div>
   </div>
   <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
     <button class="bt p" onclick="myRelFormSave()">Save</button>
     <button class="bt" onclick="myRelFormBack()">Cancel</button>
     ${!isNew?`<button class="bt d" style="margin-left:auto" onclick="myRelDelRow('${r.id}')">Delete</button>`:''}
-  </div></div></div>`;
+  </div></div></div>
+  ${objTarget?joSection(objTarget,objRid,false):''}`;
 }
 function myRelFormSave(){
   const g=id=>document.getElementById(id);
@@ -1995,11 +2028,14 @@ function myRelFormSave(){
   const vals={jira,ref:jira,team:g('mf-team').value.trim(),activity:g('mf-activity').value,
     status:g('mf-status').value,assignee:g('mf-assignee').value.trim(),relMonth:month};
   if(myRelFormId==='new'){
-    const r={id:nid('R'),nm:'',po:'',scrum:'',bizOwner:'',financeUat:'',comments:'',date:null,
-      jiraObjects:blankJiraObjects(),milestones:blankMilestones(),cmts:[],atts:[],...vals};
+    /* Commit the draft (keeps any JIRA Objects attached before first save). */
+    const r=draftRelease||{id:nid('R'),nm:'',po:'',scrum:'',bizOwner:'',financeUat:'',comments:'',
+      date:null,jiraObjects:blankJiraObjects(),cmts:[],atts:[]};
+    Object.assign(r,vals);
+    r.milestones=r.milestones||blankMilestones();
     r.milestones.prod=prod||null;r.milestones.notes=notes;
     rels.unshift(r);rflt.page=1;
-    myRelFormId=null;view='myrel';draw();toast('Release added');persist();
+    myRelFormId=null;draftRelease=null;view='myrel';draw();toast('Release added');persist();
   }else{
     const r=R(myRelFormId);if(!r)return;
     Object.assign(r,vals);
@@ -2099,6 +2135,7 @@ function joTarget(rid){return rid==='draft'?draftRelease:R(rid);}
    re-render (Add Object / Save / Delete). Reads the re-* inputs, if present,
    into the record/draft currently being edited. */
 function syncRelFormFields(){
+  if(typeof myRelSyncFields==='function')myRelSyncFields();
   if(!document.getElementById('re-jira'))return;
   const tgt=editingRelId==='draft'?draftRelease:R(editingRelId);
   if(!tgt)return;
