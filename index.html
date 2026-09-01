@@ -1898,14 +1898,47 @@ function myReleaseColumns(){
     {h:'Release Notes',w:150,cell:r=>{const n=r.milestones&&r.milestones.notes;return n?`<span class="mono" style="font-size:12px">${fd(n)}</span>`:DASH}},
   ];
 }
+/* Inline-editable My Release. Every cell is a live input/select that writes
+   straight back to the shared record and persists — no popup, no edit mode.
+   The Actions column carries per-row Delete Row plus a header Add Row. */
+const MYREL_INP='width:100%;box-sizing:border-box;border:1px solid var(--line);background:var(--card,transparent);padding:5px 7px;border-radius:6px;font-size:12.5px;color:inherit;font-family:inherit';
+function myRelSet(id,field,val){const r=R(id);if(!r)return;r[field]=val;persist()}
+function myRelSetMs(id,key,val){const r=R(id);if(!r)return;r.milestones=r.milestones||blankMilestones();r.milestones[key]=val||null;persist()}
+function myRelAddRow(){
+  const r={id:nid('R'),ref:'',jira:'',team:'',nm:'',activity:'DEVELOPMENT',status:'INPROGRESS',
+    assignee:'',date:null,po:'',scrum:'',bizOwner:'',financeUat:'',comments:'',relMonth:'',
+    jiraObjects:blankJiraObjects(),milestones:blankMilestones(),cmts:[],atts:[]};
+  rels.unshift(r);rflt.page=1;draw();toast('Row added');persist();
+}
+function myRelDelRow(id){
+  const i=rels.findIndex(r=>r.id===id);if(i<0)return;
+  rels.splice(i,1);draw();toast('Row deleted');persist();
+}
+function myRelEditRow(r){
+  const prod=r.milestones&&r.milestones.prod?r.milestones.prod:'';
+  const notes=r.milestones&&r.milestones.notes!=null?r.milestones.notes:'';
+  const monthVal=r.relMonth!=null&&r.relMonth!==''?r.relMonth:relMonth(prod);
+  const opt=(list,cur,lbl)=>list.map(o=>`<option value="${o.k}" ${cur===o.k?'selected':''}>${E(lbl(o.k))}</option>`).join('');
+  return `<tr>
+    <td><input style="${MYREL_INP}" value="${E(r.jira)}" placeholder="JIRA" onchange="myRelSet('${r.id}','jira',this.value.trim())"></td>
+    <td><input style="${MYREL_INP}" value="${E(r.team)}" placeholder="Team" onchange="myRelSet('${r.id}','team',this.value.trim())"></td>
+    <td><select style="${MYREL_INP}" onchange="myRelSet('${r.id}','activity',this.value)">${opt(ACTIVITIES,r.activity,AL)}</select></td>
+    <td><select style="${MYREL_INP}" onchange="myRelSet('${r.id}','status',this.value)">${opt(STATUSES,r.status,SU)}</select></td>
+    <td><input style="${MYREL_INP}" value="${E(r.assignee)}" placeholder="Assignee" onchange="myRelSet('${r.id}','assignee',this.value.trim())"></td>
+    <td><input style="${MYREL_INP}" value="${E(monthVal)}" placeholder="e.g. August 2026" onchange="myRelSet('${r.id}','relMonth',this.value.trim())"></td>
+    <td><input type="date" style="${MYREL_INP}" value="${E(prod)}" onchange="myRelSetMs('${r.id}','prod',this.value)"></td>
+    <td><input style="${MYREL_INP}" value="${E(notes)}" placeholder="Release notes" onchange="myRelSetMs('${r.id}','notes',this.value.trim())"></td>
+    <td style="text-align:right;white-space:nowrap"><button class="bt s d" onclick="myRelDelRow('${r.id}')">Delete Row</button></td>
+  </tr>`;
+}
 function vMyRelease(){
-  const cols=myReleaseColumns();
-  // Show only two rows for now.
-  const all=filteredReleases('myrel').slice(0,2);
+  const HEADS=['JIRA','Team','Activity','Current Status','Assignee','Release Month','Release Date','Release Notes'];
+  const WIDTHS=[120,190,150,150,150,150,140,180];
+  const all=filteredReleases('myrel');
   const totalPages=Math.max(1,Math.ceil(all.length/REL_PAGE_SIZE));
   if(rflt.page>totalPages)rflt.page=totalPages;
   const pageRows=all.slice((rflt.page-1)*REL_PAGE_SIZE,rflt.page*REL_PAGE_SIZE);
-  const tableWidth=cols.reduce((s,c)=>s+c.w,0);
+  const tableWidth=WIDTHS.reduce((s,w)=>s+w,0)+150;
   return releaseTabs('myrel')+`
   <div class="sec c"><div class="h"><h3>Find an item</h3>
     ${(rflt.q||rflt.sort!=='jiraAsc')?`<div class="r"><span class="tag">Filters active</span></div>`:''}</div>
@@ -1921,34 +1954,36 @@ function vMyRelease(){
   </div></div>
 
   <div class="c"><div class="h"><h3>My Release · ${all.length}</h3>
-    <div class="r"><span class="tag">Read-only</span>
-      <span class="tag">${cols.length} columns</span>
+    <div class="r"><span class="tag">Editable</span>
+      <span class="tag">${HEADS.length} columns</span>
+      <button class="bt s p" onclick="myRelAddRow()">Add Row</button>
       <button class="bt s" onclick="exportMyReleaseCsv()">Export</button></div></div>
-    <div class="b flush">${pageRows.length?`
+    <div class="b flush">
     <div style="overflow:auto;max-height:70vh"><table style="min-width:${tableWidth}px;border-collapse:separate;border-spacing:0">
-    <thead><tr>${cols.map(c=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${c.w}px;white-space:nowrap">${E(c.h)}</th>`).join('')}</tr></thead>
+    <thead><tr>${HEADS.map((h,i)=>`<th style="position:sticky;top:0;z-index:1;background:var(--sunk);min-width:${WIDTHS[i]}px;white-space:nowrap">${E(h)}</th>`).join('')}
+      <th style="position:sticky;top:0;z-index:1;background:var(--sunk);white-space:nowrap;text-align:right">Actions <button class="bt s p" style="margin-left:8px" onclick="myRelAddRow()">Add Row</button></th></tr></thead>
     <tbody>
-      ${pageRows.map(r=>`<tr>${cols.map(c=>`<td style="white-space:nowrap">${c.cell(r)}</td>`).join('')}</tr>`).join('')}
+      ${pageRows.map(r=>myRelEditRow(r)).join('')}
     </tbody></table></div>
-    <div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <span style="font-size:12.5px;color:var(--mut)">Showing ${pageRows.length?((rflt.page-1)*REL_PAGE_SIZE+1):0}–${(rflt.page-1)*REL_PAGE_SIZE+pageRows.length} of ${all.length}</span>
+    ${pageRows.length?`<div style="padding:13px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <span style="font-size:12.5px;color:var(--mut)">Showing ${((rflt.page-1)*REL_PAGE_SIZE+1)}–${(rflt.page-1)*REL_PAGE_SIZE+pageRows.length} of ${all.length}</span>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="bt s" ${rflt.page<=1?'disabled':''} onclick="rflt.page--;draw()">← Prev</button>
         <span style="font-size:12.5px;color:var(--mut)">Page ${rflt.page} of ${totalPages}</span>
         <button class="bt s" ${rflt.page>=totalPages?'disabled':''} onclick="rflt.page++;draw()">Next →</button>
       </div>
     </div>`
-    :rflt.q?`<div class="ept"><h4>No items found</h4><p>No records match the current search.</p>
-      <button class="bt s" style="margin-top:14px" onclick="clearRF()">Clear filters</button></div>`
-    :`<div class="ept"><h4>No items yet</h4><p>Nothing has been added yet.</p></div>`}
+    :`<div style="padding:24px 20px;text-align:center;color:var(--mut)">${rflt.q?'No records match the current search.':'No rows yet — click Add Row to start.'}</div>`}
   </div></div>`;
 }
 function exportMyReleaseCsv(){
-  const cols=myReleaseColumns();
-  const rows=[cols.map(c=>c.h)];
-  filteredReleases('myrel').forEach(r=>rows.push(cols.map(c=>{
-    const div=document.createElement('div');div.innerHTML=c.cell(r);return div.textContent.trim();
-  })));
+  const rows=[['JIRA','Team','Activity','Current Status','Assignee','Release Month','Release Date','Release Notes']];
+  filteredReleases('myrel').forEach(r=>{
+    const prod=r.milestones&&r.milestones.prod?r.milestones.prod:'';
+    const month=r.relMonth!=null&&r.relMonth!==''?r.relMonth:relMonth(prod);
+    const notes=r.milestones&&r.milestones.notes!=null?r.milestones.notes:'';
+    rows.push([r.jira||'',r.team||'',AL(r.activity),SU(r.status),r.assignee||'',month||'',prod?fd(prod):'',notes||'']);
+  });
   const csv=rows.map(row=>row.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   try{const b=new Blob([csv],{type:'text/csv'}),u=URL.createObjectURL(b),a=document.createElement('a');
     a.href=u;a.download='my-release.csv';a.click();URL.revokeObjectURL(u);toast('Exported')}
