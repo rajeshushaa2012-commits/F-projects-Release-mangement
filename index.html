@@ -1900,7 +1900,8 @@ function myReleaseColumns(){
 }
 function vMyRelease(){
   const cols=myReleaseColumns();
-  const all=filteredReleases('myrel');
+  // Show only two rows for now.
+  const all=filteredReleases('myrel').slice(0,2);
   const totalPages=Math.max(1,Math.ceil(all.length/REL_PAGE_SIZE));
   if(rflt.page>totalPages)rflt.page=totalPages;
   const pageRows=all.slice((rflt.page-1)*REL_PAGE_SIZE,rflt.page*REL_PAGE_SIZE);
