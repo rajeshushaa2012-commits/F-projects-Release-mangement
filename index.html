@@ -1170,7 +1170,8 @@ document.addEventListener('click',e=>{
   const menu=document.getElementById('acctMenu');
   if(menu&&menu.classList.contains('on')&&!menu.parentElement.contains(e.target))menu.classList.remove('on');
 });
-function go(k){view=k;openRel=null;if(k==='accts')loadAccounts();draw();window.scrollTo(0,0)}
+let relLanding=true; // release section opens on the tab buttons only; data shows after a tab click
+function go(k){view=k;openRel=null;if(k==='myrel'||k==='newdev'||k==='bms')relLanding=true;if(k==='accts')loadAccounts();draw();window.scrollTo(0,0)}
 function openR(id){openRel=id;view='rel';draw();window.scrollTo(0,0)}
 
 /* ═══ router ════════════════════════════ */
@@ -1871,7 +1872,7 @@ function gridColumns(){
 /* Internal tab strip for the single "Release Management" page.
    The three tabs reuse the existing view keys (myrel/newdev/bms) so all
    grid logic downstream stays unchanged; switching just resets the pager. */
-function relTab(k){rflt.page=1;editingRelId=null;draftRelease=null;go(k)}
+function relTab(k){rflt.page=1;editingRelId=null;draftRelease=null;view=k;openRel=null;relLanding=false;draw();window.scrollTo(0,0)}
 function releaseTabs(cur){
   // Three tabs in fixed order: My Release | Team Release | BMS Release.
   // Internal view keys stay myrel/newdev/bms; only the middle label changed.
@@ -1991,6 +1992,10 @@ function exportMyReleaseCsv(){
 function vReleaseGrid(){
   // My Release now has its own section (vMyRelease). Team Release (newdev)
   // and BMS Release (bms) remain cleared shells pending new requirements.
+  if(relLanding)return releaseTabs('')+`
+  <div class="c"><div class="b">
+    <div class="ept"><h4>Pick a release view</h4><p>Choose My Release, Team Release, or BMS Release above to load its data.</p></div>
+  </div></div>`;
   if(view==='myrel')return vMyRelease();
   return releaseTabs(view)+`
   <div class="c"><div class="b">
